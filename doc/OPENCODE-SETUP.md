@@ -1,6 +1,6 @@
-# NeuronLayer + OpenCode Setup Guide
+# CodeImpact + OpenCode Setup Guide
 
-This guide explains how to configure NeuronLayer as an MCP server for [OpenCode](https://opencode.ai).
+This guide explains how to configure CodeImpact as an MCP server for [OpenCode](https://opencode.ai).
 
 ---
 
@@ -8,23 +8,23 @@ This guide explains how to configure NeuronLayer as an MCP server for [OpenCode]
 
 1. **Node.js 18+** installed
 2. **OpenCode** installed (`npm install -g opencode`)
-3. **NeuronLayer** built (`npm run build`)
+3. **CodeImpact** built (`npm run build`)
 
 ---
 
 ## Quick Setup (Recommended)
 
-The easiest and most reliable way to configure NeuronLayer for OpenCode is using our automated initialization command.
+The easiest and most reliable way to configure CodeImpact for OpenCode is using our automated initialization command.
 
-### Step 1: Initialize NeuronLayer
+### Step 1: Initialize CodeImpact
 
 Run this command in the root of your project:
 
 ```bash
-npx neuronlayer init .
+npx codeimpact init .
 ```
 
-This will automatically detect your operating system and generate the correct `opencode.json` configuration file with the exact absolute paths required for OpenCode to connect to NeuronLayer.
+This will automatically detect your operating system and generate the correct `opencode.json` configuration file with the exact absolute paths required for OpenCode to connect to CodeImpact.
 
 ### Step 2: Start OpenCode
 
@@ -42,7 +42,7 @@ Inside OpenCode, type:
 You should see:
 ```
 MCP Servers
-  neuronlayer (local)
+  codeimpact (local)
     Status: connected
 ```
 
@@ -64,9 +64,9 @@ If you prefer to configure OpenCode manually, create an `opencode.json` file in 
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "local",
-      "command": ["cmd", "/c", "node", "C:\\Users\\YOUR_USERNAME\\path\\to\\neuronlayer\\dist\\index.js", "--project", "C:\\Users\\YOUR_USERNAME\\path\\to\\your\\project"],
+      "command": ["cmd", "/c", "node", "C:\\Users\\YOUR_USERNAME\\path\\to\\codeimpact\\dist\\index.js", "--project", "C:\\Users\\YOUR_USERNAME\\path\\to\\your\\project"],
       "enabled": true
     }
   }
@@ -78,9 +78,9 @@ If you prefer to configure OpenCode manually, create an `opencode.json` file in 
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "local",
-      "command": ["node", "/home/user/neuronlayer/dist/index.js", "--project", "/home/user/myproject"],
+      "command": ["node", "/home/user/codeimpact/dist/index.js", "--project", "/home/user/myproject"],
       "enabled": true
     }
   }
@@ -100,9 +100,9 @@ For system-wide availability, create the config in your home directory:
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "local",
-      "command": ["node", "/absolute/path/to/neuronlayer/dist/index.js", "--project", "."],
+      "command": ["node", "/absolute/path/to/codeimpact/dist/index.js", "--project", "."],
       "enabled": true
     }
   }
@@ -113,7 +113,7 @@ For system-wide availability, create the config in your home directory:
 
 ## After npm Publish
 
-Once NeuronLayer is published to npm, setup becomes simpler:
+Once CodeImpact is published to npm, setup becomes simpler:
 
 ### Using npx
 
@@ -121,9 +121,9 @@ Once NeuronLayer is published to npm, setup becomes simpler:
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "local",
-      "command": ["npx", "-y", "neuronlayer", "--project", "."],
+      "command": ["npx", "-y", "codeimpact", "--project", "."],
       "enabled": true
     }
   }
@@ -133,16 +133,16 @@ Once NeuronLayer is published to npm, setup becomes simpler:
 ### Global Install
 
 ```bash
-npm install -g neuronlayer
+npm install -g codeimpact
 ```
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "local",
-      "command": ["neuronlayer", "--project", "."],
+      "command": ["codeimpact", "--project", "."],
       "enabled": true
     }
   }
@@ -166,13 +166,13 @@ npm install -g neuronlayer
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "local",
-      "command": ["node", "C:\\path\\to\\neuronlayer\\dist\\index.js", "--project", "."],
+      "command": ["node", "C:\\path\\to\\codeimpact\\dist\\index.js", "--project", "."],
       "enabled": true,
       "environment": {
-        "NEURONLAYER_MAX_TOKENS": "8000",
-        "NEURONLAYER_DEBUG": "true"
+        "CODEIMPACT_MAX_TOKENS": "8000",
+        "CODEIMPACT_DEBUG": "true"
       }
     }
   }
@@ -183,7 +183,7 @@ npm install -g neuronlayer
 
 ## Available Tools (51 Total)
 
-Once connected, OpenCode's AI can use all NeuronLayer tools:
+Once connected, OpenCode's AI can use all CodeImpact tools:
 
 ### Core Tools (5)
 | Tool | Description |
@@ -293,7 +293,7 @@ Once connected, OpenCode's AI can use all NeuronLayer tools:
 "command": ["node", "dist/index.js", "--project", "."]
 
 // ✅ CORRECT - Absolute path
-"command": ["node", "C:\\Users\\you\\neuronlayer\\dist\\index.js", "--project", "."]
+"command": ["node", "C:\\Users\\you\\codeimpact\\dist\\index.js", "--project", "."]
 ```
 
 ### "Configuration is invalid"
@@ -310,18 +310,18 @@ Ensure `command` is an array of strings:
 
 ### Server starts but immediately fails
 
-**Check if NeuronLayer runs manually first:**
+**Check if CodeImpact runs manually first:**
 
 ```bash
-node C:\path\to\neuronlayer\dist\index.js --project C:\path\to\your\project
+node C:\path\to\codeimpact\dist\index.js --project C:\path\to\your\project
 ```
 
-If you see errors, the issue is with NeuronLayer itself, not OpenCode.
+If you see errors, the issue is with CodeImpact itself, not OpenCode.
 
 **Common errors:**
 - "Cannot find module" - Run `npm run build` first
 - "ENOENT" - Path is wrong
-- Database errors - Delete `~/.neuronlayer/projects/` and retry
+- Database errors - Delete `~/.codeimpact/projects/` and retry
 
 ### "No tools available" after connecting
 
@@ -331,23 +331,23 @@ If you see errors, the issue is with NeuronLayer itself, not OpenCode.
 
 ### Check Server Startup Manually
 
-Test if NeuronLayer starts correctly:
+Test if CodeImpact starts correctly:
 
 ```bash
 # Windows
-node C:\path\to\neuronlayer\dist\index.js --project C:\path\to\project
+node C:\path\to\codeimpact\dist\index.js --project C:\path\to\project
 
 # macOS/Linux
-node /path/to/neuronlayer/dist/index.js --project /path/to/project
+node /path/to/codeimpact/dist/index.js --project /path/to/project
 ```
 
 You should see:
 ```
-NeuronLayer starting...
+CodeImpact starting...
 Project: /path/to/project
 Indexing started...
 Indexing complete: XX files indexed
-NeuronLayer MCP server started
+CodeImpact MCP server started
 ```
 
 ### View Debug Logs
@@ -358,16 +358,16 @@ Run OpenCode with debug logging:
 opencode --log-level DEBUG
 ```
 
-### Reset NeuronLayer Data
+### Reset CodeImpact Data
 
 If you have persistent issues, clear the data:
 
 ```bash
 # Windows
-rmdir /s %USERPROFILE%\.neuronlayer
+rmdir /s %USERPROFILE%\.codeimpact
 
 # macOS/Linux
-rm -rf ~/.neuronlayer
+rm -rf ~/.codeimpact
 ```
 
 ---
@@ -400,14 +400,14 @@ Once configured, try these prompts:
 
 ## Data Storage
 
-NeuronLayer stores data in:
+CodeImpact stores data in:
 
 ```
-~/.neuronlayer/
+~/.codeimpact/
 ├── registry.json          # Project registry
 └── projects/
     └── {project-name}-{hash}/
-        ├── neuronlayer.db  # SQLite database
+        ├── codeimpact.db  # SQLite database
         └── tier1.json      # Working context
 ```
 
@@ -417,8 +417,8 @@ NeuronLayer stores data in:
 
 - [OpenCode Documentation](https://opencode.ai/docs/)
 - [MCP Protocol](https://modelcontextprotocol.io/)
-- [NeuronLayer API Reference](./API.md)
-- [NeuronLayer Architecture](./ARCHITECTURE.md)
+- [CodeImpact API Reference](./API.md)
+- [CodeImpact Architecture](./ARCHITECTURE.md)
 
 ---
 

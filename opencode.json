@@ -1,15 +1,15 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "local",
       "command": [
         "cmd",
         "/c",
         "node",
-        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\MemoryLayer\\dist\\index.js",
+        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\codeimpact\\dist\\index.js",
         "--project",
-        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\MemoryLayer"
+        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\codeimpact"
       ],
       "enabled": true
     }

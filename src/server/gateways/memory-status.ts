@@ -6,7 +6,7 @@
  * get_architecture_stats, find_undocumented, get_critical_context, get_learning_stats
  */
 
-import type { NeuronLayerEngine } from '../../core/engine.js';
+import type { CodeImpactEngine } from '../../core/engine.js';
 import type { MemoryStatusInput, MemoryStatusResponse, MemoryStatusAction } from './types.js';
 import { detectStatusAction, getStatusGathers } from './router.js';
 import { aggregateStatusResults } from './aggregator.js';
@@ -15,7 +15,7 @@ import { aggregateStatusResults } from './aggregator.js';
  * Handle a memory_status gateway call
  */
 export async function handleMemoryStatus(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput
 ): Promise<MemoryStatusResponse> {
   const action = detectStatusAction(input);
@@ -67,7 +67,7 @@ export async function handleMemoryStatus(
  * Enhanced with proactive context resurrection for "Welcome back!" experience
  */
 async function handleProjectSummary(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -133,7 +133,7 @@ async function handleProjectSummary(
  * What happened - activity summary
  */
 async function handleWhatHappened(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -161,7 +161,7 @@ async function handleWhatHappened(
  * What changed - file changes
  */
 async function handleWhatChanged(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -198,7 +198,7 @@ async function handleWhatChanged(
  * Architecture overview
  */
 async function handleArchitecture(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -241,7 +241,7 @@ async function handleArchitecture(
  * Changelog
  */
 async function handleChangelog(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -269,7 +269,7 @@ async function handleChangelog(
  * Context health
  */
 async function handleContextHealth(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -315,7 +315,7 @@ async function handleContextHealth(
  * Pattern list
  */
 async function handlePatterns(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -348,7 +348,7 @@ async function handlePatterns(
  * Architecture stats
  */
 async function handleArchitectureStats(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -370,7 +370,7 @@ async function handleArchitectureStats(
  * Find undocumented code
  */
 async function handleUndocumented(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -422,7 +422,7 @@ async function handleUndocumented(
  * Critical context items
  */
 async function handleCriticalContext(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {
@@ -460,7 +460,7 @@ async function handleCriticalContext(
  * Learning stats - enhanced with context resurrection for seamless session continuity
  */
 async function handleLearningStats(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryStatusInput,
   sourcesUsed: string[]
 ): Promise<MemoryStatusResponse> {

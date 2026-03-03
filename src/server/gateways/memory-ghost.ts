@@ -10,7 +10,7 @@
  * - resurrect: Get context from last session
  */
 
-import type { NeuronLayerEngine, GhostInsight, ConflictWarning, DejaVuMatch, ResurrectedContext } from '../../core/engine.js';
+import type { CodeImpactEngine, GhostInsight, ConflictWarning, DejaVuMatch, ResurrectedContext } from '../../core/engine.js';
 
 export type MemoryGhostMode = 'full' | 'conflicts' | 'dejavu' | 'resurrect';
 
@@ -100,7 +100,7 @@ export interface MemoryGhostResponse {
  * Handle a memory_ghost gateway call
  */
 export async function handleMemoryGhost(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryGhostInput
 ): Promise<MemoryGhostResponse> {
   const mode = input.mode || 'full';
@@ -126,7 +126,7 @@ export async function handleMemoryGhost(
  * Full ghost mode - everything
  */
 async function handleFullMode(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryGhostInput,
   sourcesUsed: string[]
 ): Promise<MemoryGhostResponse> {
@@ -192,7 +192,7 @@ async function handleFullMode(
  * Conflicts mode - check for decision conflicts
  */
 async function handleConflictsMode(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryGhostInput,
   sourcesUsed: string[]
 ): Promise<MemoryGhostResponse> {
@@ -227,7 +227,7 @@ async function handleConflictsMode(
  * Déjà vu mode - find similar past problems
  */
 async function handleDejaVuMode(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryGhostInput,
   sourcesUsed: string[]
 ): Promise<MemoryGhostResponse> {
@@ -262,7 +262,7 @@ async function handleDejaVuMode(
  * Resurrect mode - get context from last session
  */
 async function handleResurrectMode(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryGhostInput,
   sourcesUsed: string[]
 ): Promise<MemoryGhostResponse> {

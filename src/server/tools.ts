@@ -1,4 +1,4 @@
-import type { NeuronLayerEngine } from '../core/engine.js';
+import type { CodeImpactEngine } from '../core/engine.js';
 
 export interface ToolDefinition {
   name: string;
@@ -369,7 +369,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: 'set_feature_context',
-    description: 'Start tracking a new feature. Tell NeuronLayer what you are working on for better context.',
+    description: 'Start tracking a new feature. Tell CodeImpact what you are working on for better context.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -947,7 +947,7 @@ export const toolDefinitions: ToolDefinition[] = [
 ];
 
 export async function handleToolCall(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   toolName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {

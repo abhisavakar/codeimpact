@@ -1,19 +1,19 @@
 import { join, resolve } from 'path';
-import type { NeuronLayerConfig } from '../types/index.js';
+import type { CodeImpactConfig } from '../types/index.js';
 
-export function getDefaultConfig(projectPath: string): NeuronLayerConfig {
+export function getDefaultConfig(projectPath: string): CodeImpactConfig {
   const normalizedPath = resolve(projectPath);
 
   return {
     projectPath: normalizedPath,
     // Store in project directory (standard practice like .git/, .vscode/)
-    dataDir: join(normalizedPath, '.neuronlayer'),
+    dataDir: join(normalizedPath, '.codeimpact'),
     maxTokens: 6000,
     embeddingModel: 'Xenova/all-MiniLM-L6-v2', // Fallback model, faster and smaller
     watchIgnore: [
-      // ===== NeuronLayer =====
-      '**/.neuronlayer/**',
-      '**/.memorylayer/**',
+      // ===== CodeImpact =====
+      '**/.codeimpact/**',
+      '**/.codeimpact/**',
 
       // ===== Version Control =====
       '**/.git/**',

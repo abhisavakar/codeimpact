@@ -40,7 +40,7 @@ async function main(): Promise<void> {
     const { projectPath, port } = parseServeArgs(args.slice(1));
     const config = getDefaultConfig(projectPath);
 
-    console.log('NeuronLayer HTTP API starting...');
+    console.log('CodeImpact HTTP API starting...');
     console.log(`Project: ${config.projectPath}`);
     console.log(`Data directory: ${config.dataDir}`);
     console.log('');
@@ -58,8 +58,8 @@ async function main(): Promise<void> {
   // No arguments and not piped - show help
   if (args.length === 0 && process.stdin.isTTY) {
     printHelp();
-    console.log('\nTo start as MCP server, use: neuronlayer --project <path>');
-    console.log('To start HTTP API, use: neuronlayer serve --project <path>\n');
+    console.log('\nTo start as MCP server, use: codeimpact --project <path>');
+    console.log('To start HTTP API, use: codeimpact serve --project <path>\n');
     return;
   }
 
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   // Get configuration
   const config = getDefaultConfig(projectPath);
 
-  console.error('NeuronLayer starting...');
+  console.error('CodeImpact starting...');
   console.error(`Project: ${config.projectPath}`);
   console.error(`Data directory: ${config.dataDir}`);
 
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
   try {
     await server.start();
   } catch (error) {
-    console.error('Failed to start NeuronLayer:', error);
+    console.error('Failed to start CodeImpact:', error);
     process.exit(1);
   }
 }

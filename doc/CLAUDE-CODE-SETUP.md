@@ -1,6 +1,6 @@
-# NeuronLayer + Claude Code Setup Guide
+# CodeImpact + Claude Code Setup Guide
 
-This guide explains how to configure NeuronLayer as an MCP server for [Claude Code](https://code.claude.com/) (Anthropic's CLI tool).
+This guide explains how to configure CodeImpact as an MCP server for [Claude Code](https://code.claude.com/) (Anthropic's CLI tool).
 
 ---
 
@@ -8,23 +8,23 @@ This guide explains how to configure NeuronLayer as an MCP server for [Claude Co
 
 1. **Node.js 18+** installed
 2. **Claude Code** installed (`npm install -g @anthropic-ai/claude-code`)
-3. **NeuronLayer** built (`npm run build`)
+3. **CodeImpact** built (`npm run build`)
 
 ---
 
 ## Quick Setup (Recommended)
 
-The easiest and most reliable way to configure NeuronLayer for Claude Code is using our automated initialization command.
+The easiest and most reliable way to configure CodeImpact for Claude Code is using our automated initialization command.
 
-### Step 1: Initialize NeuronLayer
+### Step 1: Initialize CodeImpact
 
 Run this command in the root of your project:
 
 ```bash
-npx neuronlayer init .
+npx codeimpact init .
 ```
 
-This will automatically configure `.mcp.json` in your project with the exact absolute paths and platform-specific commands required for Claude Code to connect smoothly to NeuronLayer.
+This will automatically configure `.mcp.json` in your project with the exact absolute paths and platform-specific commands required for Claude Code to connect smoothly to CodeImpact.
 
 ### Step 2: Verify Connection
 
@@ -38,7 +38,7 @@ Start Claude Code and check your servers:
 You should see:
 ```
 MCP Servers
-  neuronlayer (stdio)
+  codeimpact (stdio)
     Status: connected
 ```
 
@@ -46,7 +46,7 @@ MCP Servers
 
 ## Configuration Methods (Advanced)
 
-If you prefer not to use the automated `npx neuronlayer init` command, Claude Code provides several ways to configure MCP servers manually.
+If you prefer not to use the automated `npx codeimpact init` command, Claude Code provides several ways to configure MCP servers manually.
 
 ### Method 1: CLI Commands
 
@@ -54,21 +54,21 @@ Claude Code provides CLI commands to manage MCP servers:
 
 ```bash
 # Add a server
-claude mcp add --transport stdio neuronlayer -- node /absolute/path/to/dist/index.js --project .
+claude mcp add --transport stdio codeimpact -- node /absolute/path/to/dist/index.js --project .
 
 # List all servers
 claude mcp list
 
 # Get server details
-claude mcp get neuronlayer
+claude mcp get codeimpact
 
 # Remove a server
-claude mcp remove neuronlayer
+claude mcp remove codeimpact
 ```
 
 **Note:** On Windows natively, you MUST wrap the node execution with `cmd /c` to prevent stdin/stdout hanging issues:
 ```bash
-claude mcp add --transport stdio neuronlayer -- cmd /c node C:\absolute\path\to\dist\index.js --project .
+claude mcp add --transport stdio codeimpact -- cmd /c node C:\absolute\path\to\dist\index.js --project .
 ```
 
 ### Method 2: Project Configuration (`.mcp.json`)
@@ -78,10 +78,10 @@ If you want to create `.mcp.json` in your project root manually:
 ```json
 {
   "mcpServers": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "stdio",
       "command": "node",
-      "args": ["/absolute/path/to/neuronlayer/dist/index.js", "--project", "."],
+      "args": ["/absolute/path/to/codeimpact/dist/index.js", "--project", "."],
       "env": {}
     }
   }
@@ -102,7 +102,7 @@ If you want to create `.mcp.json` in your project root manually:
 
 ```bash
 # The automated init command uses Project scope by default
-npx neuronlayer init .
+npx codeimpact init .
 ```
 
 ---
@@ -115,7 +115,7 @@ On native Windows (not WSL), use the `cmd /c` wrapper for proper execution:
 
 ```bash
 # Using CLI
-claude mcp add --transport stdio neuronlayer -- cmd /c node C:\path\to\neuronlayer\dist\index.js --project .
+claude mcp add --transport stdio codeimpact -- cmd /c node C:\path\to\codeimpact\dist\index.js --project .
 ```
 
 **In `.mcp.json`:**
@@ -123,10 +123,10 @@ claude mcp add --transport stdio neuronlayer -- cmd /c node C:\path\to\neuronlay
 ```json
 {
   "mcpServers": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "stdio",
       "command": "cmd",
-      "args": ["/c", "node", "C:\\path\\to\\neuronlayer\\dist\\index.js", "--project", "."],
+      "args": ["/c", "node", "C:\\path\\to\\codeimpact\\dist\\index.js", "--project", "."],
       "env": {}
     }
   }
@@ -138,13 +138,13 @@ claude mcp add --transport stdio neuronlayer -- cmd /c node C:\path\to\neuronlay
 WSL works like Linux:
 
 ```bash
-claude mcp add --transport stdio neuronlayer -- node /path/to/neuronlayer/dist/index.js --project .
+claude mcp add --transport stdio codeimpact -- node /path/to/codeimpact/dist/index.js --project .
 ```
 
 ### macOS / Linux
 
 ```bash
-claude mcp add --transport stdio neuronlayer -- node /path/to/neuronlayer/dist/index.js --project .
+claude mcp add --transport stdio codeimpact -- node /path/to/codeimpact/dist/index.js --project .
 ```
 
 **In `.mcp.json`:**
@@ -152,10 +152,10 @@ claude mcp add --transport stdio neuronlayer -- node /path/to/neuronlayer/dist/i
 ```json
 {
   "mcpServers": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "stdio",
       "command": "node",
-      "args": ["/Users/you/neuronlayer/dist/index.js", "--project", "."],
+      "args": ["/Users/you/codeimpact/dist/index.js", "--project", "."],
       "env": {}
     }
   }
@@ -166,29 +166,29 @@ claude mcp add --transport stdio neuronlayer -- node /path/to/neuronlayer/dist/i
 
 ## After npm Publish
 
-Once NeuronLayer is published to npm, setup becomes simpler:
+Once CodeImpact is published to npm, setup becomes simpler:
 
 ### CLI Command
 
 ```bash
 # Install globally
-npm install -g neuronlayer
+npm install -g codeimpact
 
 # Add to Claude Code
-claude mcp add --transport stdio neuronlayer -- neuronlayer --project .
+claude mcp add --transport stdio codeimpact -- codeimpact --project .
 ```
 
 ### Using npx
 
 ```bash
 # Without installation
-claude mcp add --transport stdio neuronlayer -- npx -y neuronlayer --project .
+claude mcp add --transport stdio codeimpact -- npx -y codeimpact --project .
 ```
 
 **Windows (with npx):**
 
 ```bash
-claude mcp add --transport stdio neuronlayer -- cmd /c npx -y neuronlayer --project .
+claude mcp add --transport stdio codeimpact -- cmd /c npx -y codeimpact --project .
 ```
 
 ### Project `.mcp.json`
@@ -196,10 +196,10 @@ claude mcp add --transport stdio neuronlayer -- cmd /c npx -y neuronlayer --proj
 ```json
 {
   "mcpServers": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "neuronlayer", "--project", "."],
+      "args": ["-y", "codeimpact", "--project", "."],
       "env": {}
     }
   }
@@ -210,18 +210,18 @@ claude mcp add --transport stdio neuronlayer -- cmd /c npx -y neuronlayer --proj
 
 ## Environment Variables
 
-### NeuronLayer Configuration
+### CodeImpact Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NEURONLAYER_MAX_TOKENS` | 6000 | Maximum tokens for context assembly |
-| `NEURONLAYER_DEBUG` | false | Enable debug logging |
+| `CODEIMPACT_MAX_TOKENS` | 6000 | Maximum tokens for context assembly |
+| `CODEIMPACT_DEBUG` | false | Enable debug logging |
 
 ```bash
 claude mcp add --transport stdio \
-  --env NEURONLAYER_MAX_TOKENS=8000 \
-  --env NEURONLAYER_DEBUG=true \
-  neuronlayer -- node dist/index.js --project .
+  --env CODEIMPACT_MAX_TOKENS=8000 \
+  --env CODEIMPACT_DEBUG=true \
+  codeimpact -- node dist/index.js --project .
 ```
 
 ### Claude Code MCP Settings
@@ -240,7 +240,7 @@ MCP_TIMEOUT=120000 MAX_MCP_OUTPUT_TOKENS=50000 claude
 
 ## Available MCP Tools
 
-Once connected, Claude Code can use these NeuronLayer tools:
+Once connected, Claude Code can use these CodeImpact tools:
 
 ### Core Tools
 
@@ -345,16 +345,16 @@ Ensure you're using the `cmd /c` wrapper:
 
 ```bash
 # Wrong
-claude mcp add --transport stdio neuronlayer -- node dist/index.js --project .
+claude mcp add --transport stdio codeimpact -- node dist/index.js --project .
 
 # Correct
-claude mcp add --transport stdio neuronlayer -- cmd /c node dist/index.js --project .
+claude mcp add --transport stdio codeimpact -- cmd /c node dist/index.js --project .
 ```
 
 ### "Server not found" or "ENOENT"
 
 1. Verify the path to `dist/index.js` is correct and absolute
-2. Ensure NeuronLayer is built: `npm run build`
+2. Ensure CodeImpact is built: `npm run build`
 3. Check Node.js is in your PATH
 
 ### "MCP server not connected"
@@ -395,7 +395,7 @@ Or set in `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "stdio",
       "command": "node",
       "args": ["dist/index.js", "--project", "."],
@@ -417,13 +417,13 @@ claude --log-level DEBUG
 
 ## Importing from Claude Desktop
 
-If you already have NeuronLayer configured in Claude Desktop:
+If you already have CodeImpact configured in Claude Desktop:
 
 ```bash
 # Import all servers from Claude Desktop
 claude mcp add-from-claude-desktop
 
-# Select neuronlayer from the list
+# Select codeimpact from the list
 
 # Verify import
 claude mcp list
@@ -433,14 +433,14 @@ claude mcp list
 
 ## Data Storage
 
-NeuronLayer stores data locally:
+CodeImpact stores data locally:
 
 ```
-~/.neuronlayer/
+~/.codeimpact/
 ├── registry.json          # Project registry
 └── projects/
     └── {project-name}-{hash}/
-        ├── neuronlayer.db  # SQLite database
+        ├── codeimpact.db  # SQLite database
         └── tier1.json      # Working context
 ```
 
@@ -465,7 +465,7 @@ NeuronLayer stores data locally:
 - [Claude Code MCP Guide](https://code.claude.com/docs/en/mcp)
 - [Claude Code Settings](https://code.claude.com/docs/en/settings)
 - [MCP Protocol Specification](https://modelcontextprotocol.io/)
-- [NeuronLayer Documentation](./INDEX.md)
+- [CodeImpact Documentation](./INDEX.md)
 
 ---
 
@@ -475,7 +475,7 @@ NeuronLayer stores data locally:
 
 ```bash
 # One-liner setup
-claude mcp add --transport stdio neuronlayer -- node /path/to/neuronlayer/dist/index.js --project .
+claude mcp add --transport stdio codeimpact -- node /path/to/codeimpact/dist/index.js --project .
 ```
 
 ### Full `.mcp.json` Example
@@ -483,16 +483,16 @@ claude mcp add --transport stdio neuronlayer -- node /path/to/neuronlayer/dist/i
 ```json
 {
   "mcpServers": {
-    "neuronlayer": {
+    "codeimpact": {
       "type": "stdio",
       "command": "node",
       "args": [
-        "/path/to/neuronlayer/dist/index.js",
+        "/path/to/codeimpact/dist/index.js",
         "--project",
         "."
       ],
       "env": {
-        "NEURONLAYER_MAX_TOKENS": "8000"
+        "CODEIMPACT_MAX_TOKENS": "8000"
       }
     }
   }

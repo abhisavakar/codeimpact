@@ -6,7 +6,7 @@
  * list_sources, suggest_existing
  */
 
-import type { NeuronLayerEngine } from '../../core/engine.js';
+import type { CodeImpactEngine } from '../../core/engine.js';
 import type { MemoryQueryInput, MemoryQueryResponse, MemoryQueryAction } from './types.js';
 import { detectQueryAction, parseQuery, isFilePath } from './router.js';
 import { aggregateQueryResults, mergeSearchResults } from './aggregator.js';
@@ -16,7 +16,7 @@ import { formatTimeAgo } from '../../utils/time.js';
  * Handle a memory_query gateway call
  */
 export async function handleMemoryQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput
 ): Promise<MemoryQueryResponse> {
   const action = detectQueryAction(input);
@@ -62,7 +62,7 @@ export async function handleMemoryQuery(
  * Enhanced with déjà vu detection and proactive predictions
  */
 async function handleContextQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {
@@ -147,7 +147,7 @@ async function handleContextQuery(
  * Search only (no context assembly)
  */
 async function handleSearchOnlyQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {
@@ -174,7 +174,7 @@ async function handleSearchOnlyQuery(
  * File context retrieval
  */
 async function handleFileQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {
@@ -214,7 +214,7 @@ async function handleFileQuery(
  * File summary retrieval
  */
 async function handleSummaryQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {
@@ -244,7 +244,7 @@ async function handleSummaryQuery(
  * Symbol lookup
  */
 async function handleSymbolQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {
@@ -301,7 +301,7 @@ async function handleSymbolQuery(
  * Dependency lookup
  */
 async function handleDependenciesQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {
@@ -333,7 +333,7 @@ async function handleDependenciesQuery(
  * Predicted files query
  */
 async function handlePredictQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {
@@ -362,7 +362,7 @@ async function handlePredictQuery(
  * Confidence assessment query
  */
 async function handleConfidenceQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {
@@ -398,7 +398,7 @@ async function handleConfidenceQuery(
  * Source attribution query
  */
 async function handleSourcesQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {
@@ -428,7 +428,7 @@ async function handleSourcesQuery(
  * Existing function suggestions query
  */
 async function handleExistingQuery(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryQueryInput,
   sourcesUsed: string[]
 ): Promise<MemoryQueryResponse> {

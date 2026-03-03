@@ -1,11 +1,13 @@
 {
   "mcpServers": {
-    "neuronlayer": {
-      "command": "node",
+    "codeimpact": {
+      "command": "cmd",
       "args": [
-        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\MemoryLayer\\dist\\index.js",
+        "/c",
+        "node",
+        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\codeimpact\\dist\\index.js",
         "--project",
-        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\MemoryLayer"
+        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\codeimpact"
       ]
     }
   }

@@ -6,7 +6,7 @@
  * get_test_coverage
  */
 
-import type { NeuronLayerEngine } from '../../core/engine.js';
+import type { CodeImpactEngine } from '../../core/engine.js';
 import type { MemoryReviewInput, MemoryReviewResponse } from './types.js';
 import { detectReviewAction, getReviewChecks, isErrorMessage } from './router.js';
 import {
@@ -24,7 +24,7 @@ import {
  * Handle a memory_review gateway call
  */
 export async function handleMemoryReview(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryReviewInput
 ): Promise<MemoryReviewResponse> {
   const action = detectReviewAction(input);
@@ -62,7 +62,7 @@ export async function handleMemoryReview(
  * Enhanced with Ghost Mode conflict detection
  */
 async function handleFullReview(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryReviewInput,
   sourcesUsed: string[]
 ): Promise<MemoryReviewResponse> {
@@ -212,7 +212,7 @@ async function handleFullReview(
  * Pattern validation only
  */
 async function handlePatternOnly(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryReviewInput,
   sourcesUsed: string[]
 ): Promise<MemoryReviewResponse> {
@@ -239,7 +239,7 @@ async function handlePatternOnly(
  * Conflict check only
  */
 async function handleConflictsOnly(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryReviewInput,
   sourcesUsed: string[]
 ): Promise<MemoryReviewResponse> {
@@ -272,7 +272,7 @@ async function handleConflictsOnly(
  * Test check only
  */
 async function handleTestsOnly(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryReviewInput,
   sourcesUsed: string[]
 ): Promise<MemoryReviewResponse> {
@@ -318,7 +318,7 @@ async function handleTestsOnly(
  * Confidence check only
  */
 async function handleConfidenceOnly(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryReviewInput,
   sourcesUsed: string[]
 ): Promise<MemoryReviewResponse> {
@@ -344,7 +344,7 @@ async function handleConfidenceOnly(
  * Bug search only
  */
 async function handleBugsOnly(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryReviewInput,
   sourcesUsed: string[]
 ): Promise<MemoryReviewResponse> {
@@ -377,7 +377,7 @@ async function handleBugsOnly(
  * Coverage check only
  */
 async function handleCoverageOnly(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryReviewInput,
   sourcesUsed: string[]
 ): Promise<MemoryReviewResponse> {

@@ -22,7 +22,7 @@ export function listProjects(): CommandResult {
   if (projects.length === 0) {
     return {
       success: true,
-      message: 'No projects registered. Use "neuronlayer projects add <path>" to add one.'
+      message: 'No projects registered. Use "codeimpact projects add <path>" to add one.'
     };
   }
 
@@ -123,7 +123,7 @@ export function discoverProjects(): CommandResult {
     lines.push(`    ${path}`);
     lines.push('');
   }
-  lines.push('Use "neuronlayer projects add <path>" to register a project.');
+  lines.push('Use "codeimpact projects add <path>" to register a project.');
 
   return {
     success: true,
@@ -144,7 +144,7 @@ export function exportDecisions(
     if (!activeProject) {
       return {
         success: false,
-        message: 'No project specified and no active project. Use "neuronlayer projects switch <id>" first.'
+        message: 'No project specified and no active project. Use "codeimpact projects switch <id>" first.'
       };
     }
     targetPath = activeProject.path;
@@ -155,15 +155,15 @@ export function exportDecisions(
   if (!projectInfo) {
     return {
       success: false,
-      message: `Project not registered: ${targetPath}. Use "neuronlayer projects add ${targetPath}" first.`
+      message: `Project not registered: ${targetPath}. Use "codeimpact projects add ${targetPath}" first.`
     };
   }
 
   // Open database and get decisions (check both new and old names)
-  let dbPath = join(projectInfo.dataDir, 'neuronlayer.db');
+  let dbPath = join(projectInfo.dataDir, 'codeimpact.db');
   if (!existsSync(dbPath)) {
     // Fall back to old name for backwards compatibility
-    const oldDbPath = join(projectInfo.dataDir, 'memorylayer.db');
+    const oldDbPath = join(projectInfo.dataDir, 'codeimpact.db');
     if (existsSync(oldDbPath)) {
       dbPath = oldDbPath;
     } else {
@@ -216,7 +216,7 @@ export function showProject(projectId?: string): CommandResult {
       success: false,
       message: projectId
         ? `Project not found: ${projectId}`
-        : 'No active project. Use "neuronlayer projects switch <id>" first.'
+        : 'No active project. Use "codeimpact projects switch <id>" first.'
     };
   }
 
@@ -328,12 +328,12 @@ function configureProjectMCP(
   const resolvedPath = resolve(isWindows ? __dirname.substring(1) : __dirname, 'index.js');
   
   if (isWindows) {
-    config.mcpServers['neuronlayer'] = { 
+    config.mcpServers['codeimpact'] = { 
       command: 'cmd', 
       args: ['/c', 'node', resolvedPath, '--project', absoluteProjectPath] 
     };
   } else {
-    config.mcpServers['neuronlayer'] = { 
+    config.mcpServers['codeimpact'] = { 
       command: 'node', 
       args: [resolvedPath, '--project', absoluteProjectPath] 
     };
@@ -379,13 +379,13 @@ function configureOpenCode(
   const resolvedPath = resolve(isWindows ? __dirname.substring(1) : __dirname, 'index.js');
   
   if (isWindows) {
-    (config.mcp as Record<string, unknown>)['neuronlayer'] = {
+    (config.mcp as Record<string, unknown>)['codeimpact'] = {
       type: 'local',
       command: ['cmd', '/c', 'node', resolvedPath, '--project', absoluteProjectPath],
       enabled: true
     };
   } else {
-    (config.mcp as Record<string, unknown>)['neuronlayer'] = {
+    (config.mcp as Record<string, unknown>)['codeimpact'] = {
       type: 'local',
       command: ['node', resolvedPath, '--project', absoluteProjectPath],
       enabled: true
@@ -400,7 +400,7 @@ function configureOpenCode(
   }
 }
 
-// Initialize neuronlayer for current project + auto-configure Claude Desktop & OpenCode
+// Initialize codeimpact for current project + auto-configure Claude Desktop & OpenCode
 export function initProject(projectPath?: string): CommandResult {
   const targetPath = projectPath || process.cwd();
 
@@ -411,7 +411,7 @@ export function initProject(projectPath?: string): CommandResult {
   }
 
   const projectInfo = addResult.data as ProjectInfo;
-  const serverName = `neuronlayer-${projectInfo.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+  const serverName = `codeimpact-${projectInfo.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
   const platform = process.platform;
 
   const configuredClients: string[] = [];
@@ -443,7 +443,7 @@ export function initProject(projectPath?: string): CommandResult {
   }
 
   // 4. Configure Claude Code (CLI) - use project-local .mcp.json
-  // This ensures only the current project's NeuronLayer connects
+  // This ensures only the current project's CodeImpact connects
   const claudeCodeConfigPath = join(targetPath, '.mcp.json');
   const claudeCodeResult = configureProjectMCP(claudeCodeConfigPath, targetPath);
   if (claudeCodeResult.success) {
@@ -467,7 +467,7 @@ export function initProject(projectPath?: string): CommandResult {
 
   // Build result message
   let message = `
-NeuronLayer initialized!
+CodeImpact initialized!
 
 Project: ${projectInfo.name}
 Path: ${targetPath}
@@ -493,10 +493,10 @@ ${configuredClients.map(c => '  ✓ ' + c).join('\n')}
 // Print help
 export function printHelp(): void {
   console.log(`
-NeuronLayer CLI - Code Intelligence for AI Coding Assistants
+CodeImpact CLI - Code Intelligence for AI Coding Assistants
 
 USAGE:
-  neuronlayer [command] [options]
+  codeimpact [command] [options]
 
 COMMANDS:
   init [path]               Initialize project + auto-configure AI tools
@@ -520,31 +520,31 @@ OPTIONS:
 EXAMPLES:
   # Quick setup (auto-configures Claude Desktop)
   cd /path/to/project
-  neuronlayer init
+  codeimpact init
 
   # Start MCP server
-  neuronlayer --project /path/to/project
+  codeimpact --project /path/to/project
 
   # List all projects
-  neuronlayer projects list
+  codeimpact projects list
 
   # Add a new project
-  neuronlayer projects add /path/to/my-project
+  codeimpact projects add /path/to/my-project
 
   # Switch active project
-  neuronlayer projects switch abc123
+  codeimpact projects switch abc123
 
   # Export decisions to ADR files
-  neuronlayer export --format madr
+  codeimpact export --format madr
 
   # Discover projects
-  neuronlayer projects discover
+  codeimpact projects discover
 
   # Start HTTP API server (for tools without MCP support)
-  neuronlayer serve --project /path/to/project
-  neuronlayer serve --port 8080
+  codeimpact serve --project /path/to/project
+  codeimpact serve --port 8080
 
-For more information, visit: https://github.com/abhisavakar/neuronlayer
+For more information, visit: https://github.com/abhisavakar/codeimpact
 `);
 }
 
@@ -577,7 +577,7 @@ export function executeCLI(args: string[]): void {
           const path = args[2];
           if (!path) {
             console.error('Error: Project path required.');
-            console.error('Usage: neuronlayer projects add <path>');
+            console.error('Usage: codeimpact projects add <path>');
             process.exit(1);
           }
           const result = addProject(path);
@@ -589,7 +589,7 @@ export function executeCLI(args: string[]): void {
           const id = args[2];
           if (!id) {
             console.error('Error: Project ID required.');
-            console.error('Usage: neuronlayer projects remove <id>');
+            console.error('Usage: codeimpact projects remove <id>');
             process.exit(1);
           }
           const result = removeProject(id);
@@ -601,7 +601,7 @@ export function executeCLI(args: string[]): void {
           const id = args[2];
           if (!id) {
             console.error('Error: Project ID required.');
-            console.error('Usage: neuronlayer projects switch <id>');
+            console.error('Usage: codeimpact projects switch <id>');
             process.exit(1);
           }
           const result = switchProject(id);

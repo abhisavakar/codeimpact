@@ -1,4 +1,4 @@
-import type { NeuronLayerEngine } from '../core/engine.js';
+import type { CodeImpactEngine } from '../core/engine.js';
 
 export interface ResourceDefinition {
   uri: string;
@@ -9,13 +9,13 @@ export interface ResourceDefinition {
 
 export const resourceDefinitions: ResourceDefinition[] = [
   {
-    uri: 'neuronlayer://decisions/recent',
+    uri: 'codeimpact://decisions/recent',
     name: 'Recent Decisions',
     description: 'Last 10 architectural decisions made in this project',
     mimeType: 'application/json'
   },
   {
-    uri: 'neuronlayer://project/overview',
+    uri: 'codeimpact://project/overview',
     name: 'Project Overview',
     description: 'High-level project summary including languages, files, and structure',
     mimeType: 'text/markdown'
@@ -23,11 +23,11 @@ export const resourceDefinitions: ResourceDefinition[] = [
 ];
 
 export async function handleResourceRead(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   uri: string
 ): Promise<{ contents: string; mimeType: string }> {
   switch (uri) {
-    case 'neuronlayer://decisions/recent': {
+    case 'codeimpact://decisions/recent': {
       const decisions = engine.getRecentDecisions(10);
 
       const contents = JSON.stringify(
@@ -46,7 +46,7 @@ export async function handleResourceRead(
       return { contents, mimeType: 'application/json' };
     }
 
-    case 'neuronlayer://project/overview': {
+    case 'codeimpact://project/overview': {
       const summary = engine.getProjectSummary();
 
       const markdown = `# ${summary.name}

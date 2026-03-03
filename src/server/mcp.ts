@@ -6,7 +6,7 @@ import {
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { NeuronLayerEngine } from '../core/engine.js';
+import { CodeImpactEngine } from '../core/engine.js';
 import {
   allToolDefinitions,
   handleGatewayCall,
@@ -14,18 +14,18 @@ import {
 } from './gateways/index.js';
 import { handleToolCall } from './tools.js';
 import { resourceDefinitions, handleResourceRead } from './resources.js';
-import type { NeuronLayerConfig } from '../types/index.js';
+import type { CodeImpactConfig } from '../types/index.js';
 
 export class MCPServer {
   private server: Server;
-  private engine: NeuronLayerEngine;
+  private engine: CodeImpactEngine;
 
-  constructor(config: NeuronLayerConfig) {
-    this.engine = new NeuronLayerEngine(config);
+  constructor(config: CodeImpactConfig) {
+    this.engine = new CodeImpactEngine(config);
 
     this.server = new Server(
       {
-        name: 'neuronlayer',
+        name: 'codeimpact',
         version: '0.1.0'
       },
       {
@@ -128,7 +128,7 @@ export class MCPServer {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
 
-    console.error('NeuronLayer MCP server started');
+    console.error('CodeImpact MCP server started');
 
     // Initialize the engine in the background (indexing, etc.)
     // This allows MCP to respond while indexing happens

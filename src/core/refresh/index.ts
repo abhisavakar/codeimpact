@@ -1,5 +1,5 @@
 /**
- * Intelligent Refresh System for NeuronLayer
+ * Intelligent Refresh System for CodeImpact
  *
  * This module provides a tiered refresh architecture:
  *

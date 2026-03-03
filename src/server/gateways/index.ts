@@ -10,7 +10,7 @@
  * Phase 13: Added memory_verify for pre-commit quality gate
  */
 
-import type { NeuronLayerEngine } from '../../core/engine.js';
+import type { CodeImpactEngine } from '../../core/engine.js';
 import type {
   ToolDefinition,
   MemoryQueryInput,
@@ -401,7 +401,7 @@ export const standaloneDefinitions: ToolDefinition[] = [
   },
   {
     name: 'discover_projects',
-    description: 'Find git repositories on the system. Use when user wants to add/register a project to NeuronLayer.',
+    description: 'Find git repositories on the system. Use when user wants to add/register a project to CodeImpact.',
     inputSchema: {
       type: 'object',
       properties: {}
@@ -426,7 +426,7 @@ export const allToolDefinitions: ToolDefinition[] = [
  * Handle a gateway tool call, routing to the appropriate internal tools
  */
 export async function handleGatewayCall(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   gatewayName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {

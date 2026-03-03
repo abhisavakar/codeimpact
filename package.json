@@ -1,11 +1,11 @@
 {
-  "name": "neuronlayer",
+  "name": "codeimpact",
   "version": "0.2.12",
   "description": "MCP server that gives AI assistants persistent understanding of your codebase",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "neuronlayer": "dist/index.js"
+    "codeimpact": "dist/index.js"
   },
   "files": [
     "dist/**",
@@ -33,12 +33,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/abhisavakar/neuronlayer.git"
+    "url": "git+https://github.com/abhisavakar/codeimpact.git"
   },
   "bugs": {
-    "url": "https://github.com/abhisavakar/neuronlayer/issues"
+    "url": "https://github.com/abhisavakar/codeimpact/issues"
   },
-  "homepage": "https://github.com/abhisavakar/neuronlayer#readme",
+  "homepage": "https://github.com/abhisavakar/codeimpact#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0",
     "@xenova/transformers": "^2.17.0",

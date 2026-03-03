@@ -1,4 +1,4 @@
-// Core types for NeuronLayer
+// Core types for CodeImpact
 
 export interface Position {
   line: number;
@@ -117,7 +117,7 @@ export interface IndexingProgress {
   current?: string;
 }
 
-export interface NeuronLayerConfig {
+export interface CodeImpactConfig {
   projectPath: string;
   dataDir: string;
   maxTokens: number;

@@ -1,21 +1,21 @@
 /**
- * HTTP API Server for NeuronLayer
+ * HTTP API Server for CodeImpact
  *
  * Provides REST endpoints for tools that don't support MCP.
  * Runs alongside or instead of the MCP server.
  */
 
 import { createServer, IncomingMessage, ServerResponse } from 'http';
-import { NeuronLayerEngine } from '../core/engine.js';
-import type { NeuronLayerConfig } from '../types/index.js';
+import { CodeImpactEngine } from '../core/engine.js';
+import type { CodeImpactConfig } from '../types/index.js';
 
 export class HTTPServer {
-  private engine: NeuronLayerEngine;
+  private engine: CodeImpactEngine;
   private server: ReturnType<typeof createServer> | null = null;
   private port: number;
 
-  constructor(config: NeuronLayerConfig, port: number = 3333) {
-    this.engine = new NeuronLayerEngine(config);
+  constructor(config: CodeImpactConfig, port: number = 3333) {
+    this.engine = new CodeImpactEngine(config);
     this.port = port;
   }
 
@@ -28,7 +28,7 @@ export class HTTPServer {
     });
 
     this.server.listen(this.port, () => {
-      console.log(`NeuronLayer HTTP API running at http://localhost:${this.port}`);
+      console.log(`CodeImpact HTTP API running at http://localhost:${this.port}`);
       console.log('');
       console.log('Endpoints:');
       console.log('  GET  /status              - Project status and stats');

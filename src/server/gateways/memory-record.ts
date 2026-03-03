@@ -7,7 +7,7 @@
  * Smart Decision Detection: Auto-detects when content looks like a decision
  */
 
-import type { NeuronLayerEngine } from '../../core/engine.js';
+import type { CodeImpactEngine } from '../../core/engine.js';
 import type { MemoryRecordInput, MemoryRecordResponse } from './types.js';
 import { detectRecordType, validateRecordInput } from './router.js';
 
@@ -72,7 +72,7 @@ function extractDecisionTitle(content: string): string | null {
  * Handle a memory_record gateway call
  */
 export async function handleMemoryRecord(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryRecordInput
 ): Promise<MemoryRecordResponse> {
   // Validate input
@@ -159,7 +159,7 @@ export async function handleMemoryRecord(
  * Record a decision
  */
 async function handleRecordDecision(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryRecordInput,
   warnings?: MemoryRecordResponse['warnings']
 ): Promise<MemoryRecordResponse> {
@@ -211,7 +211,7 @@ async function handleRecordDecision(
  * Record a pattern
  */
 async function handleRecordPattern(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryRecordInput
 ): Promise<MemoryRecordResponse> {
   const code = input.code!;
@@ -233,7 +233,7 @@ async function handleRecordPattern(
  * Add an example to a pattern
  */
 async function handleRecordPatternExample(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryRecordInput
 ): Promise<MemoryRecordResponse> {
   const patternId = input.pattern_id!;
@@ -266,7 +266,7 @@ async function handleRecordPatternExample(
  * Record feedback about context usefulness
  */
 async function handleRecordFeedback(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryRecordInput
 ): Promise<MemoryRecordResponse> {
   const query = input.query || input.content;
@@ -289,7 +289,7 @@ async function handleRecordFeedback(
  * Start tracking a feature context
  */
 async function handleRecordFeature(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryRecordInput
 ): Promise<MemoryRecordResponse> {
   const name = input.content;
@@ -320,7 +320,7 @@ async function handleRecordFeature(
  * Mark content as critical (never compressed)
  */
 async function handleRecordCritical(
-  engine: NeuronLayerEngine,
+  engine: CodeImpactEngine,
   input: MemoryRecordInput
 ): Promise<MemoryRecordResponse> {
   const content = input.content;

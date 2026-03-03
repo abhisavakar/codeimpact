@@ -3,7 +3,7 @@ import { join, basename, resolve } from 'path';
 import { createHash } from 'crypto';
 import { homedir } from 'os';
 import Database from 'better-sqlite3';
-import type { NeuronLayerConfig } from '../types/index.js';
+import type { CodeImpactConfig } from '../types/index.js';
 
 export interface ProjectInfo {
   id: string;
@@ -28,7 +28,7 @@ export class ProjectManager {
   private baseDataDir: string;
 
   constructor() {
-    this.baseDataDir = join(homedir(), '.memorylayer');
+    this.baseDataDir = join(homedir(), '.codeimpact');
     this.registryPath = join(this.baseDataDir, 'registry.json');
 
     // Ensure base directory exists
@@ -177,7 +177,7 @@ export class ProjectManager {
   }
 
   // Get config for a project
-  getProjectConfig(projectPath: string): NeuronLayerConfig {
+  getProjectConfig(projectPath: string): CodeImpactConfig {
     const normalizedPath = resolve(projectPath);
     const dataDir = this.getProjectDataDir(normalizedPath);
 
@@ -270,9 +270,9 @@ export class ProjectManager {
 
     for (const project of this.listProjects()) {
       // Check both new and old database names
-      let dbPath = join(project.dataDir, 'neuronlayer.db');
+      let dbPath = join(project.dataDir, 'codeimpact.db');
       if (!existsSync(dbPath)) {
-        dbPath = join(project.dataDir, 'memorylayer.db');
+        dbPath = join(project.dataDir, 'codeimpact.db');
       }
 
       if (existsSync(dbPath)) {
