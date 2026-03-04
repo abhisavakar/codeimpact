@@ -70,9 +70,9 @@ export class ProjectManager {
   }
 
   private getProjectDataDir(projectPath: string): string {
-    const projectId = this.generateProjectId(projectPath);
-    const projectName = basename(projectPath);
-    return join(this.baseDataDir, 'projects', `${projectName}-${projectId}`);
+    // Store data locally in the project's .codeimpact folder
+    // This ensures each project has isolated data that travels with the repo
+    return join(resolve(projectPath), '.codeimpact');
   }
 
   // Register a new project or update existing
@@ -269,8 +269,10 @@ export class ProjectManager {
     const result: Array<{ project: ProjectInfo; db: Database.Database }> = [];
 
     for (const project of this.listProjects()) {
-      // Check both new and old database names
-      let dbPath = join(project.dataDir, 'codeimpact.db');
+      // Check project-local .codeimpact folder (primary location)
+      let dbPath = join(project.path, '.codeimpact', 'codeimpact.db');
+
+      // Fallback to legacy centralized location
       if (!existsSync(dbPath)) {
         dbPath = join(project.dataDir, 'codeimpact.db');
       }
