@@ -509,6 +509,84 @@ export function runUsageStats(
   };
 }
 
+// Force reindex - clears database for fresh indexing
+export function forceReindex(projectPath?: string): CommandResult {
+  // Determine project path
+  let targetPath = projectPath;
+  if (!targetPath) {
+    const activeProject = projectManager.getActiveProject();
+    if (!activeProject) {
+      return {
+        success: false,
+        message: 'No project specified and no active project. Use "codeimpact projects switch <id>" first.'
+      };
+    }
+    targetPath = activeProject.path;
+  }
+
+  // Get project info
+  const projectInfo = projectManager.getProjectByPath(targetPath);
+  if (!projectInfo) {
+    return {
+      success: false,
+      message: `Project not registered: ${targetPath}. Use "codeimpact projects add ${targetPath}" first.`
+    };
+  }
+
+  // Find database
+  const dbPath = findDatabasePath(projectInfo);
+  if (!dbPath) {
+    return {
+      success: true,
+      message: 'No database found - nothing to clear. Run your AI tool to create fresh index.'
+    };
+  }
+
+  // Open database and clear indexing tables
+  const db = initializeDatabase(dbPath);
+
+  try {
+    // Clear file-related tables (preserve decisions and usage stats)
+    db.exec(`
+      DELETE FROM files;
+      DELETE FROM embeddings;
+      DELETE FROM dependencies;
+      DELETE FROM symbols;
+      DELETE FROM imports;
+      DELETE FROM exports;
+      DELETE FROM file_access;
+      DELETE FROM file_summaries;
+      DELETE FROM test_index;
+      DELETE FROM refresh_state;
+    `);
+
+    db.close();
+
+    return {
+      success: true,
+      message: `Index cleared for ${projectInfo.name}.
+
+What was preserved:
+  - Architectural decisions
+  - Usage statistics
+
+What was cleared:
+  - File index
+  - Symbol index
+  - Dependencies
+  - Test mappings
+
+Next step: Restart your AI tool (Claude Desktop, Cursor, etc.) to trigger fresh indexing.`
+    };
+  } catch (err) {
+    db.close();
+    return {
+      success: false,
+      message: `Failed to clear index: ${err instanceof Error ? err.message : String(err)}`
+    };
+  }
+}
+
 // Show project info
 export function showProject(projectId?: string): CommandResult {
   let project: ProjectInfo | null;
@@ -913,7 +991,8 @@ COMMANDS:
   deadcode [options]        Find unused exports and dead code
   test-impact [options]     Find which tests to run for changed files
   impact <file> [options]   Analyze blast radius and risk of changing a file
-  stats [options]           Show token usage and cost savings dashboard
+  stats [options]           Show token usage and costs
+  reindex                   Clear index for fresh re-indexing (after git issues)
   projects list             List all registered projects
   projects add <path>       Add a project to the registry
   projects remove <id>      Remove a project from the registry
@@ -1222,6 +1301,25 @@ export function executeCLI(args: string[]): void {
       const statsResult = runUsageStats(projectPath, { json, period });
       console.log(statsResult.message);
       if (!statsResult.success) process.exit(1);
+      break;
+    }
+
+    case 'reindex': {
+      // Parse reindex options
+      let projectPath: string | undefined;
+
+      for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        if ((arg === '--project' || arg === '-p') && nextArg) {
+          projectPath = nextArg;
+          i++;
+        }
+      }
+
+      const reindexResult = forceReindex(projectPath);
+      console.log(reindexResult.message);
+      if (!reindexResult.success) process.exit(1);
       break;
     }
 

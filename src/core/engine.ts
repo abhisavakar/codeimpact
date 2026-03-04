@@ -26,7 +26,7 @@ import { DeadCodeDetector, type DeadCodeReport, type UnusedExport, type UnusedFi
 import { TestImpactAnalyzer, type TestImpactResult, type AffectedFile } from './test-impact-analyzer.js';
 import { BlastRadiusAnalyzer, type BlastRadiusResult, type RiskLevel } from './blast-radius.js';
 import { CostTracker, type UsageStats, type StatsPeriod } from './cost-tracker.js';
-import { GitStalenessChecker, ActivityGate } from './refresh/index.js';
+import { GitStalenessChecker, ActivityGate, GitSyncManager, formatGitChangeInfo, type GitChangeInfo } from './refresh/index.js';
 import { detectLanguage, getPreview, countLines } from '../utils/files.js';
 import type { CodeImpactConfig, AssembledContext, Decision, ProjectSummary, SearchResult, CodeSymbol, SymbolKind, ActiveFeatureContext, HotContext } from '../types/index.js';
 import type { ArchitectureDoc, ComponentDoc, DailyChangelog, ChangelogOptions, ValidationResult, ActivityResult, UndocumentedItem, ContextHealth, CompactionResult, CompactionOptions, CriticalContext, DriftResult, ConfidenceResult, ConfidenceLevel, ConfidenceSources, ConflictResult, ChangeQueryResult, ChangeQueryOptions, Diagnosis, PastBug, FixSuggestion, Change, Pattern, PatternCategory, PatternValidationResult, ExistingFunction, TestInfo, TestFramework, TestValidationResult, TestUpdate, TestCoverage } from '../types/documentation.js';
@@ -59,6 +59,7 @@ export class CodeImpactEngine {
   private dejaVu: DejaVuDetector;
   private codeVerifier: CodeVerifier;
   private gitStalenessChecker: GitStalenessChecker;
+  private gitSyncManager: GitSyncManager;
   private activityGate: ActivityGate;
   private initialized = false;
   private initializationStatus: 'pending' | 'indexing' | 'ready' | 'error' = 'pending';
@@ -184,7 +185,11 @@ export class CodeImpactEngine {
 
     // Intelligent Refresh System
     this.gitStalenessChecker = new GitStalenessChecker(config.projectPath);
+    this.gitSyncManager = new GitSyncManager(config.projectPath);
     this.activityGate = new ActivityGate();
+
+    // Set up git sync manager to detect reverts, resets, branch switches
+    this.setupGitSyncManager();
 
     // Register this project
     const projectInfo = this.projectManager.registerProject(config.projectPath);
@@ -271,6 +276,126 @@ export class CodeImpactEngine {
     this.indexer.on('error', (error) => {
       console.error('Indexer error:', error);
     });
+  }
+
+  private setupGitSyncManager(): void {
+    // Initialize git sync manager
+    this.gitSyncManager.initialize();
+
+    // Handle git state changes
+    this.gitSyncManager.onGitChange(async (change: GitChangeInfo) => {
+      console.error(formatGitChangeInfo(change));
+
+      switch (change.type) {
+        case 'history_rewrite':
+          // Reset, revert, rebase, or force push detected
+          // Need to reindex affected files as the code has changed
+          console.error('[GitSync] History rewrite detected - triggering reindex of affected files');
+          await this.handleHistoryRewrite(change);
+          break;
+
+        case 'branch_switch':
+          // Switched branches - need full reindex as files may be very different
+          console.error('[GitSync] Branch switch detected - triggering full reindex');
+          await this.handleBranchSwitch(change);
+          break;
+
+        case 'new_commits':
+          // Normal forward progress - just update changed files
+          if (change.changedFiles.length > 0) {
+            console.error(`[GitSync] New commits with ${change.changedFiles.length} changed files`);
+            // File watcher should handle this, but ensure we're synced
+            this.gitStalenessChecker.updateCachedHead();
+          }
+          break;
+
+        case 'merge':
+          // Merge commit - may have many changed files
+          if (change.changedFiles.length > 0) {
+            console.error(`[GitSync] Merge detected with ${change.changedFiles.length} changed files`);
+            // File watcher should handle this
+            this.gitStalenessChecker.updateCachedHead();
+          }
+          break;
+      }
+    });
+
+    // Start watching for git changes (poll every 5 seconds)
+    this.gitSyncManager.startWatching(5000);
+  }
+
+  private async handleHistoryRewrite(change: GitChangeInfo): Promise<void> {
+    // When history is rewritten (reset, revert, rebase), we need to:
+    // 1. Reindex all affected files
+    // 2. The file watcher may not catch all changes if files reverted to previous state
+
+    if (change.changedFiles.length > 0) {
+      // Reindex specific changed files
+      console.error(`[GitSync] Reindexing ${change.changedFiles.length} files after history rewrite`);
+      for (const file of change.changedFiles) {
+        try {
+          // Force reindex by invalidating and re-indexing
+          await this.indexer.indexFile(file);
+        } catch (err) {
+          // File may have been deleted in the rewrite
+          console.error(`[GitSync] Could not reindex ${file}: ${err}`);
+        }
+      }
+    } else {
+      // No specific files detected, do a full reindex to be safe
+      console.error('[GitSync] No specific files detected, triggering full reindex');
+      await this.forceFullReindex();
+    }
+
+    // Update staleness checker
+    this.gitStalenessChecker.updateCachedHead();
+
+    // Log activity
+    this.livingDocs.getActivityTracker().logActivity(
+      'git_history_rewrite',
+      `Git history rewritten: ${change.commitsRemoved} commits removed, ${change.changedFiles.length} files affected`,
+      undefined,
+      { type: change.type, commitsRemoved: change.commitsRemoved, filesAffected: change.changedFiles.length }
+    );
+  }
+
+  private async handleBranchSwitch(change: GitChangeInfo): Promise<void> {
+    // Branch switch - potentially all files are different
+    console.error(`[GitSync] Switched from ${change.previousBranch || 'detached'} to ${change.currentBranch || 'detached'}`);
+
+    if (change.changedFiles.length > 0 && change.changedFiles.length < 100) {
+      // Reasonable number of changed files, reindex them
+      console.error(`[GitSync] Reindexing ${change.changedFiles.length} files after branch switch`);
+      for (const file of change.changedFiles) {
+        try {
+          await this.indexer.indexFile(file);
+        } catch (err) {
+          // File may not exist on this branch
+        }
+      }
+    } else {
+      // Too many files or couldn't detect - full reindex
+      console.error('[GitSync] Full reindex after branch switch');
+      await this.forceFullReindex();
+    }
+
+    // Update staleness checker
+    this.gitStalenessChecker.updateCachedHead();
+
+    // Log activity
+    this.livingDocs.getActivityTracker().logActivity(
+      'git_branch_switch',
+      `Switched branch: ${change.previousBranch || 'detached'} → ${change.currentBranch || 'detached'}`,
+      undefined,
+      { from: change.previousBranch, to: change.currentBranch, filesAffected: change.changedFiles.length }
+    );
+  }
+
+  private async forceFullReindex(): Promise<void> {
+    // Trigger a full reindex by re-running initial index
+    console.error('[GitSync] Performing full reindex...');
+    await this.indexer.performInitialIndex();
+    console.error('[GitSync] Full reindex complete');
   }
 
   async initialize(): Promise<void> {
@@ -1825,6 +1950,7 @@ export class CodeImpactEngine {
   shutdown(): void {
     console.error('Shutting down CodeImpact...');
     this.indexer.stopWatching();
+    this.gitSyncManager.stopWatching();
     this.activityGate.shutdown();
     this.tier1.save();
     this.featureContextManager.shutdown();

@@ -25,3 +25,4 @@
 
 export { GitStalenessChecker } from './git-staleness-checker.js';
 export { ActivityGate, type IdleTask } from './activity-gate.js';
+export { GitSyncManager, formatGitChangeInfo, type GitChangeType, type GitChangeInfo, type GitChangeCallback } from './git-sync-manager.js';
