@@ -39,15 +39,16 @@ export interface DeadCodeReport {
 
 // ==================== Framework Detection ====================
 
+// ==================== FRONTEND FRAMEWORKS ====================
+
 /**
  * Next.js special files that are used by the framework, not imported directly.
- * These files export components/handlers that Next.js calls automatically.
  */
 const NEXTJS_SPECIAL_FILES = new Set([
   'page', 'layout', 'loading', 'error', 'not-found', 'template',
   'default', 'route', 'middleware', 'instrumentation',
   'apple-icon', 'icon', 'opengraph-image', 'twitter-image',
-  'sitemap', 'robots', 'manifest',
+  'sitemap', 'robots', 'manifest', 'global-error',
 ]);
 
 /**
@@ -55,7 +56,7 @@ const NEXTJS_SPECIAL_FILES = new Set([
  */
 const NEXTJS_SPECIAL_EXPORTS = new Set([
   // Metadata
-  'metadata', 'generateMetadata', 'generateStaticParams',
+  'metadata', 'generateMetadata', 'generateStaticParams', 'generateViewport',
   // Route segment config
   'dynamic', 'dynamicParams', 'revalidate', 'fetchCache',
   'runtime', 'preferredRegion', 'maxDuration',
@@ -65,37 +66,364 @@ const NEXTJS_SPECIAL_EXPORTS = new Set([
   'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS',
   // Middleware
   'config', 'matcher',
+  // getServerSideProps / getStaticProps (Pages Router)
+  'getServerSideProps', 'getStaticProps', 'getStaticPaths', 'getInitialProps',
 ]);
+
+/**
+ * Remix special files and exports.
+ */
+const REMIX_SPECIAL_FILES = new Set([
+  'root', 'entry.client', 'entry.server',
+]);
+
+const REMIX_SPECIAL_EXPORTS = new Set([
+  'loader', 'action', 'meta', 'links', 'headers', 'handle',
+  'shouldRevalidate', 'ErrorBoundary', 'CatchBoundary',
+  'HydrateFallback', 'clientLoader', 'clientAction',
+]);
+
+/**
+ * Nuxt.js (Vue) special files and exports.
+ */
+const NUXT_SPECIAL_FILES = new Set([
+  'app', 'error', 'nuxt.config', 'app.config',
+]);
+
+const NUXT_SPECIAL_EXPORTS = new Set([
+  'definePageMeta', 'useHead', 'useSeoMeta',
+  'defineNuxtConfig', 'defineAppConfig', 'defineNuxtPlugin',
+  'defineEventHandler', 'defineNuxtRouteMiddleware',
+]);
+
+/**
+ * SvelteKit special files and exports.
+ */
+const SVELTEKIT_SPECIAL_FILES = new Set([
+  '+page', '+layout', '+error', '+server', '+page.server', '+layout.server',
+  'hooks.server', 'hooks.client', 'params',
+]);
+
+const SVELTEKIT_SPECIAL_EXPORTS = new Set([
+  'load', 'actions', 'prerender', 'ssr', 'csr', 'trailingSlash',
+  'handle', 'handleError', 'handleFetch', 'match',
+]);
+
+/**
+ * Astro special files and exports.
+ */
+const ASTRO_SPECIAL_FILES = new Set([
+  'astro.config', 'env.d',
+]);
+
+const ASTRO_SPECIAL_EXPORTS = new Set([
+  'getStaticPaths', 'prerender', 'partial',
+]);
+
+/**
+ * Vue.js special exports (Options API & Composition API).
+ */
+const VUE_SPECIAL_EXPORTS = new Set([
+  'defineComponent', 'defineProps', 'defineEmits', 'defineExpose',
+  'defineOptions', 'defineSlots', 'defineModel',
+  // Options API
+  'data', 'methods', 'computed', 'watch', 'props', 'emits',
+  'components', 'directives', 'mixins', 'extends',
+  'beforeCreate', 'created', 'beforeMount', 'mounted',
+  'beforeUpdate', 'updated', 'beforeUnmount', 'unmounted',
+  // Vue Router
+  'beforeRouteEnter', 'beforeRouteUpdate', 'beforeRouteLeave',
+]);
+
+/**
+ * Angular special exports and decorators.
+ */
+const ANGULAR_SPECIAL_EXPORTS = new Set([
+  // Decorators (often appear as exports)
+  'Component', 'Directive', 'Pipe', 'Injectable', 'NgModule',
+  'Input', 'Output', 'ViewChild', 'ContentChild', 'HostListener',
+  // Lifecycle hooks
+  'ngOnInit', 'ngOnDestroy', 'ngOnChanges', 'ngAfterViewInit',
+  'ngAfterContentInit', 'ngDoCheck',
+  // Module exports
+  'AppModule', 'AppComponent', 'AppRoutingModule',
+]);
+
+/**
+ * Angular special files.
+ */
+const ANGULAR_SPECIAL_FILES = new Set([
+  'app.module', 'app.component', 'app-routing.module',
+  'main', 'polyfills', 'environment', 'environments',
+]);
+
+// ==================== BACKEND FRAMEWORKS ====================
+
+/**
+ * FastAPI (Python) special patterns.
+ */
+const FASTAPI_SPECIAL_EXPORTS = new Set([
+  // Decorators and functions
+  'app', 'router', 'APIRouter', 'FastAPI',
+  'Depends', 'Query', 'Path', 'Body', 'Header', 'Cookie', 'Form', 'File',
+  'HTTPException', 'Request', 'Response', 'BackgroundTasks',
+  // Pydantic
+  'BaseModel', 'Field', 'validator', 'root_validator',
+  // Lifecycle
+  'on_event', 'lifespan',
+]);
+
+const FASTAPI_SPECIAL_FILES = new Set([
+  'main', 'app', 'deps', 'dependencies', 'config', 'settings',
+  'schemas', 'models', 'crud', 'routers', 'api',
+]);
+
+/**
+ * Django (Python) special patterns.
+ */
+const DJANGO_SPECIAL_EXPORTS = new Set([
+  // Views
+  'urlpatterns', 'app_name',
+  // Models
+  'Meta', 'objects', 'DoesNotExist', 'MultipleObjectsReturned',
+  // Admin
+  'admin', 'ModelAdmin', 'TabularInline', 'StackedInline',
+  // Settings
+  'INSTALLED_APPS', 'MIDDLEWARE', 'DATABASES', 'TEMPLATES',
+  'STATIC_URL', 'MEDIA_URL', 'SECRET_KEY', 'DEBUG', 'ALLOWED_HOSTS',
+  // Management commands
+  'Command', 'handle',
+]);
+
+const DJANGO_SPECIAL_FILES = new Set([
+  'settings', 'urls', 'wsgi', 'asgi', 'admin', 'apps', 'models',
+  'views', 'forms', 'serializers', 'signals', 'tasks', 'celery',
+  'conftest', 'manage',
+]);
+
+/**
+ * Flask (Python) special patterns.
+ */
+const FLASK_SPECIAL_EXPORTS = new Set([
+  'app', 'Flask', 'Blueprint', 'request', 'g', 'session',
+  'current_app', 'render_template', 'redirect', 'url_for',
+  'before_request', 'after_request', 'teardown_request',
+]);
+
+const FLASK_SPECIAL_FILES = new Set([
+  'app', 'wsgi', 'config', 'extensions', 'blueprints',
+]);
+
+/**
+ * Express.js / Node.js backend special patterns.
+ */
+const EXPRESS_SPECIAL_EXPORTS = new Set([
+  'app', 'router', 'express', 'Router',
+  // Middleware
+  'use', 'get', 'post', 'put', 'delete', 'patch', 'all',
+  // Common patterns
+  'middleware', 'errorHandler', 'notFound',
+]);
+
+const EXPRESS_SPECIAL_FILES = new Set([
+  'app', 'server', 'index', 'routes', 'middleware', 'controllers',
+  'config', 'db', 'database', 'models',
+]);
+
+/**
+ * NestJS special patterns.
+ */
+const NESTJS_SPECIAL_EXPORTS = new Set([
+  // Decorators
+  'Controller', 'Get', 'Post', 'Put', 'Delete', 'Patch',
+  'Module', 'Injectable', 'Inject',
+  'UseGuards', 'UseInterceptors', 'UsePipes', 'UseFilters',
+  'Body', 'Param', 'Query', 'Headers', 'Req', 'Res',
+  // Lifecycle
+  'onModuleInit', 'onModuleDestroy', 'onApplicationBootstrap',
+  'onApplicationShutdown', 'beforeApplicationShutdown',
+  // Module exports
+  'AppModule', 'AppController', 'AppService',
+]);
+
+const NESTJS_SPECIAL_FILES = new Set([
+  'main', 'app.module', 'app.controller', 'app.service',
+]);
+
+/**
+ * Spring Boot (Java) special patterns - for Kotlin/TS ports.
+ */
+const SPRING_SPECIAL_EXPORTS = new Set([
+  'RestController', 'GetMapping', 'PostMapping', 'PutMapping', 'DeleteMapping',
+  'RequestMapping', 'Service', 'Repository', 'Component', 'Autowired',
+  'Bean', 'Configuration', 'Value', 'SpringBootApplication',
+]);
+
+/**
+ * Ruby on Rails patterns (for similar Node/TS implementations).
+ */
+const RAILS_SPECIAL_FILES = new Set([
+  'application_controller', 'application_record', 'application_helper',
+  'routes', 'schema', 'seeds',
+]);
+
+// ==================== TESTING FRAMEWORKS ====================
+
+/**
+ * Test framework special exports and files.
+ */
+const TEST_SPECIAL_EXPORTS = new Set([
+  // Jest/Vitest
+  'describe', 'it', 'test', 'expect', 'beforeEach', 'afterEach',
+  'beforeAll', 'afterAll', 'jest', 'vi',
+  // Pytest
+  'pytest', 'fixture', 'mark', 'parametrize',
+  // Mocha
+  'suite', 'setup', 'teardown',
+  // Cypress
+  'cy', 'Cypress',
+  // Playwright
+  'test', 'expect', 'Page', 'Browser',
+]);
+
+const TEST_SPECIAL_FILES = new Set([
+  'conftest', 'setup', 'teardown', 'fixtures', 'mocks',
+  'jest.setup', 'vitest.setup', 'setupTests',
+]);
+
+// ==================== CONFIG FILES ====================
 
 /**
  * Config files that are loaded by tools, not imported.
  */
 const CONFIG_FILE_PATTERNS = [
+  // JavaScript/TypeScript config
   /eslint\.config\.(m?js|ts)$/i,
+  /\.eslintrc(\.(js|json|ya?ml))?$/i,
   /next\.config\.(m?js|ts)$/i,
-  /tailwind\.config\.(js|ts|cjs|mjs)$/i,
-  /postcss\.config\.(js|ts|cjs|mjs)$/i,
+  /nuxt\.config\.(js|ts)$/i,
+  /svelte\.config\.(js|ts)$/i,
+  /astro\.config\.(m?js|ts)$/i,
   /vite\.config\.(js|ts|mjs)$/i,
   /vitest\.config\.(js|ts|mts)$/i,
   /webpack\.config\.(js|ts)$/i,
+  /rollup\.config\.(js|ts|mjs)$/i,
   /jest\.config\.(js|ts|mjs)$/i,
   /babel\.config\.(js|json|cjs)$/i,
+  /\.babelrc(\.json)?$/i,
   /prettier\.config\.(js|ts|cjs|mjs)$/i,
+  /\.prettierrc(\.(js|json|ya?ml))?$/i,
+  /tailwind\.config\.(js|ts|cjs|mjs)$/i,
+  /postcss\.config\.(js|ts|cjs|mjs)$/i,
   /tsconfig.*\.json$/i,
+  /jsconfig\.json$/i,
   /package\.json$/i,
   /\.env(\..*)?$/i,
+  // Python config
+  /pyproject\.toml$/i,
+  /setup\.py$/i,
+  /setup\.cfg$/i,
+  /requirements.*\.txt$/i,
+  /Pipfile$/i,
+  /poetry\.lock$/i,
+  /tox\.ini$/i,
+  /pytest\.ini$/i,
+  /\.flake8$/i,
+  /mypy\.ini$/i,
+  // Docker/DevOps
+  /Dockerfile$/i,
+  /docker-compose\.ya?ml$/i,
+  /\.dockerignore$/i,
+  /Makefile$/i,
+  /\.gitlab-ci\.ya?ml$/i,
+  /\.github\/.*\.ya?ml$/i,
+  /Jenkinsfile$/i,
+  // Other
+  /\.gitignore$/i,
+  /\.editorconfig$/i,
+  /\.nvmrc$/i,
+  /\.node-version$/i,
+  /\.ruby-version$/i,
+  /\.python-version$/i,
 ];
+
+// ==================== FRAMEWORK DIRECTORIES ====================
 
 /**
  * Directories that indicate framework-managed files.
  */
 const FRAMEWORK_DIRS = [
-  '/app/',        // Next.js App Router
-  '/pages/',      // Next.js Pages Router
-  '/api/',        // API routes
-  '/.next/',      // Next.js build output
-  '/public/',     // Static assets
+  // Next.js
+  '/app/',
+  '/pages/',
+  '/.next/',
+  // Nuxt
+  '/.nuxt/',
+  '/composables/',
+  '/plugins/',
+  // SvelteKit
+  '/.svelte-kit/',
+  '/routes/',
+  // Astro
+  '/.astro/',
+  // General
+  '/api/',
+  '/public/',
+  '/static/',
+  '/assets/',
+  // Python
+  '/migrations/',
+  '/alembic/',
+  '/__pycache__/',
+  // Build outputs
+  '/dist/',
+  '/build/',
+  '/out/',
+  '/node_modules/',
+  '/.venv/',
+  '/venv/',
 ];
+
+// ==================== COMBINED SETS ====================
+
+/**
+ * All framework special files combined.
+ */
+const ALL_FRAMEWORK_SPECIAL_FILES = new Set([
+  ...NEXTJS_SPECIAL_FILES,
+  ...REMIX_SPECIAL_FILES,
+  ...NUXT_SPECIAL_FILES,
+  ...SVELTEKIT_SPECIAL_FILES,
+  ...ASTRO_SPECIAL_FILES,
+  ...ANGULAR_SPECIAL_FILES,
+  ...FASTAPI_SPECIAL_FILES,
+  ...DJANGO_SPECIAL_FILES,
+  ...FLASK_SPECIAL_FILES,
+  ...EXPRESS_SPECIAL_FILES,
+  ...NESTJS_SPECIAL_FILES,
+  ...RAILS_SPECIAL_FILES,
+  ...TEST_SPECIAL_FILES,
+]);
+
+/**
+ * All framework special exports combined.
+ */
+const ALL_FRAMEWORK_SPECIAL_EXPORTS = new Set([
+  ...NEXTJS_SPECIAL_EXPORTS,
+  ...REMIX_SPECIAL_EXPORTS,
+  ...NUXT_SPECIAL_EXPORTS,
+  ...SVELTEKIT_SPECIAL_EXPORTS,
+  ...ASTRO_SPECIAL_EXPORTS,
+  ...VUE_SPECIAL_EXPORTS,
+  ...ANGULAR_SPECIAL_EXPORTS,
+  ...FASTAPI_SPECIAL_EXPORTS,
+  ...DJANGO_SPECIAL_EXPORTS,
+  ...FLASK_SPECIAL_EXPORTS,
+  ...EXPRESS_SPECIAL_EXPORTS,
+  ...NESTJS_SPECIAL_EXPORTS,
+  ...SPRING_SPECIAL_EXPORTS,
+  ...TEST_SPECIAL_EXPORTS,
+]);
 
 /**
  * DeadCodeDetector - Finds unused exports and files in a codebase.
@@ -244,14 +572,14 @@ export class DeadCodeDetector {
     const fileBaseName = fileName.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/, '');
 
     // Next.js special files
-    if (NEXTJS_SPECIAL_FILES.has(fileBaseName)) {
+    if (ALL_FRAMEWORK_SPECIAL_FILES.has(fileBaseName)) {
       if (normalizedPath.includes('/app/') || normalizedPath.includes('/pages/')) {
         return true;
       }
     }
 
     // Next.js special exports
-    if (NEXTJS_SPECIAL_EXPORTS.has(exp.exportedName)) {
+    if (ALL_FRAMEWORK_SPECIAL_EXPORTS.has(exp.exportedName)) {
       return true;
     }
 
@@ -502,7 +830,7 @@ export class DeadCodeDetector {
     // ==================== Framework Detection ====================
 
     // Next.js special files (page.tsx, layout.tsx, etc.) - very low confidence
-    if (NEXTJS_SPECIAL_FILES.has(fileBaseName)) {
+    if (ALL_FRAMEWORK_SPECIAL_FILES.has(fileBaseName)) {
       // Check if it's in app/ or pages/ directory
       if (normalizedPath.includes('/app/') || normalizedPath.includes('/pages/')) {
         confidence -= 70; // These are framework-managed
@@ -510,7 +838,7 @@ export class DeadCodeDetector {
     }
 
     // Next.js special exports (metadata, dynamic, GET, etc.)
-    if (NEXTJS_SPECIAL_EXPORTS.has(exp.exportedName)) {
+    if (ALL_FRAMEWORK_SPECIAL_EXPORTS.has(exp.exportedName)) {
       confidence -= 60; // Framework reads these
     }
 
@@ -534,7 +862,7 @@ export class DeadCodeDetector {
     // Lower confidence for default exports (commonly used by external tools)
     if (exp.isDefault) {
       // But only if not already handled by framework detection
-      if (!NEXTJS_SPECIAL_FILES.has(fileBaseName)) {
+      if (!ALL_FRAMEWORK_SPECIAL_FILES.has(fileBaseName)) {
         confidence -= 10;
       }
     }
@@ -571,17 +899,53 @@ export class DeadCodeDetector {
    * Check if a file is in a framework-managed directory.
    */
   private isFrameworkFile(normalizedPath: string): boolean {
+    const fileName = normalizedPath.split('/').pop() || '';
+    const baseName = fileName.replace(/\.(ts|tsx|js|jsx|py|rb)$/, '');
+
+    // Check if file is in a framework directory
+    for (const dir of FRAMEWORK_DIRS) {
+      if (normalizedPath.includes(dir)) {
+        // If in framework dir and has special file name, it's framework-managed
+        if (ALL_FRAMEWORK_SPECIAL_FILES.has(baseName)) {
+          return true;
+        }
+      }
+    }
+
     // Next.js App Router files
     if (normalizedPath.includes('/app/')) {
-      const fileName = normalizedPath.split('/').pop() || '';
-      const baseName = fileName.replace(/\.(ts|tsx|js|jsx)$/, '');
-      if (NEXTJS_SPECIAL_FILES.has(baseName)) {
+      if (ALL_FRAMEWORK_SPECIAL_FILES.has(baseName)) {
         return true;
       }
     }
 
-    // Next.js Pages Router
-    if (normalizedPath.includes('/pages/')) {
+    // Next.js Pages Router - all files are routes
+    if (normalizedPath.includes('/pages/') && !normalizedPath.includes('/pages/api/')) {
+      return true;
+    }
+
+    // SvelteKit routes
+    if (normalizedPath.includes('/routes/') && baseName.startsWith('+')) {
+      return true;
+    }
+
+    // Nuxt pages
+    if (normalizedPath.includes('/pages/') || normalizedPath.includes('/composables/') || normalizedPath.includes('/plugins/')) {
+      return true;
+    }
+
+    // Python special files
+    if (baseName === '__init__' || baseName === '__main__' || baseName === 'conftest') {
+      return true;
+    }
+
+    // Django migrations
+    if (normalizedPath.includes('/migrations/') && baseName !== '__init__') {
+      return true;
+    }
+
+    // Alembic migrations
+    if (normalizedPath.includes('/alembic/') || normalizedPath.includes('/versions/')) {
       return true;
     }
 
@@ -601,7 +965,7 @@ export class DeadCodeDetector {
     // ==================== Framework Detection ====================
 
     // Next.js special files in app/ or pages/ directories
-    if (NEXTJS_SPECIAL_FILES.has(fileBaseName)) {
+    if (ALL_FRAMEWORK_SPECIAL_FILES.has(fileBaseName)) {
       if (normalizedPath.includes('/app/') || normalizedPath.includes('/pages/')) {
         confidence -= 70; // Framework-managed files
       }
