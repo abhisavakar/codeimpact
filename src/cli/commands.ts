@@ -852,6 +852,176 @@ codeimpact reindex
   }
 }
 
+// Helper to configure Cursor project-level MCP (.cursor/mcp.json)
+function configureCursorProjectMCP(
+  projectPath: string
+): { success: boolean; message: string } {
+  const cursorDir = join(projectPath, '.cursor');
+  const configPath = join(cursorDir, 'mcp.json');
+
+  // Create .cursor directory if it doesn't exist
+  try {
+    if (!existsSync(cursorDir)) {
+      mkdirSync(cursorDir, { recursive: true });
+    }
+  } catch {
+    // Directory might already exist
+  }
+
+  let config: { mcpServers?: Record<string, unknown> } = { mcpServers: {} };
+
+  try {
+    if (existsSync(configPath)) {
+      const content = readFileSync(configPath, 'utf-8');
+      config = JSON.parse(content);
+    }
+  } catch {
+    // Config doesn't exist or is invalid, start fresh
+  }
+
+  if (!config.mcpServers) {
+    config.mcpServers = {};
+  }
+
+  const absoluteProjectPath = resolve(projectPath);
+  const isWindows = process.platform === 'win32';
+
+  // Use absolute path to the compiled JS file
+  const __dirname = new URL('.', import.meta.url).pathname;
+  const resolvedPath = resolve(isWindows ? __dirname.substring(1) : __dirname, 'index.js');
+
+  if (isWindows) {
+    config.mcpServers['codeimpact'] = {
+      command: 'cmd',
+      args: ['/c', 'node', resolvedPath, '--project', absoluteProjectPath]
+    };
+  } else {
+    config.mcpServers['codeimpact'] = {
+      command: 'node',
+      args: [resolvedPath, '--project', absoluteProjectPath]
+    };
+  }
+
+  try {
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    return { success: true, message: `Cursor MCP: .cursor/mcp.json (project-local)` };
+  } catch (err) {
+    return { success: false, message: `Cursor MCP: Failed - ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+// Helper to create/update .cursorrules with CodeImpact tool preferences
+function configureCursorRules(projectPath: string): { success: boolean; message: string } {
+  const cursorRulesPath = join(projectPath, '.cursorrules');
+  const codeimpactSection = `
+# CodeImpact Integration
+
+CodeImpact provides intelligent code analysis. **Use these MCP tools FIRST** before falling back to built-in tools.
+
+## Tool Preferences (IMPORTANT)
+
+1. **For code searches and questions about the codebase:**
+   - Use \`mcp_codeimpact_memory_query\` FIRST (semantic search, returns relevant context)
+   - Only fall back to file search if CodeImpact returns no results
+
+2. **Before writing or suggesting code changes:**
+   - Run \`mcp_codeimpact_memory_review\` to check against patterns, past decisions, and potential conflicts
+   - This catches hallucinated imports, duplicate functions, and pattern violations
+
+3. **Before finalizing/committing code:**
+   - Run \`mcp_codeimpact_memory_verify\` for pre-commit quality checks
+   - Catches security issues, missing dependencies, and import errors
+
+4. **At session start:**
+   - Run \`mcp_codeimpact_memory_status\` to get project overview and recent changes
+
+5. **For impact analysis:**
+   - Use \`mcp_codeimpact_memory_blast_radius\` to analyze risk of changing a file
+   - Shows affected files, critical paths, and recommendations
+
+## Why Use CodeImpact Tools?
+
+- **Semantic search**: Understands intent, not just keywords
+- **Pattern awareness**: Knows project conventions and enforces them
+- **Decision memory**: Remembers past architectural decisions
+- **Import validation**: Catches hallucinated imports before they break builds
+- **Blast radius**: Understand impact and risk before making changes
+
+## Quick Reference
+
+| Task | Tool |
+|------|------|
+| Find code | \`mcp_codeimpact_memory_query\` |
+| Check code | \`mcp_codeimpact_memory_review\` |
+| Verify code | \`mcp_codeimpact_memory_verify\` |
+| Project status | \`mcp_codeimpact_memory_status\` |
+| Save decision | \`mcp_codeimpact_memory_record\` |
+| Impact analysis | \`mcp_codeimpact_memory_blast_radius\` |
+
+## CLI Commands
+
+\`\`\`bash
+# Find unused exports and dead code
+codeimpact deadcode
+
+# Find which tests to run for changed files
+codeimpact test-impact --changed src/file.ts
+
+# Analyze blast radius and risk of changing a file
+codeimpact impact src/core/engine.ts
+
+# View token usage statistics
+codeimpact stats
+\`\`\`
+`;
+
+  try {
+    let existingContent = '';
+
+    if (existsSync(cursorRulesPath)) {
+      existingContent = readFileSync(cursorRulesPath, 'utf-8');
+
+      // Check if CodeImpact section already exists
+      if (existingContent.includes('# CodeImpact Integration')) {
+        // Update existing section
+        const startMarker = '# CodeImpact Integration';
+        const startIndex = existingContent.indexOf(startMarker);
+
+        // Find the next # header (single #) or end of file
+        const afterStart = existingContent.substring(startIndex + startMarker.length);
+        const nextSectionMatch = afterStart.match(/\n# [^#]/);
+
+        let endIndex: number;
+        if (nextSectionMatch && nextSectionMatch.index !== undefined) {
+          endIndex = startIndex + startMarker.length + nextSectionMatch.index;
+        } else {
+          endIndex = existingContent.length;
+        }
+
+        // Replace the section
+        const newContent = existingContent.substring(0, startIndex) +
+                          codeimpactSection.trim() +
+                          '\n\n' +
+                          existingContent.substring(endIndex).trimStart();
+
+        writeFileSync(cursorRulesPath, newContent.trim() + '\n');
+        return { success: true, message: `.cursorrules: Updated CodeImpact section` };
+      } else {
+        // Append section at the end
+        const newContent = existingContent.trimEnd() + '\n\n' + codeimpactSection.trim() + '\n';
+        writeFileSync(cursorRulesPath, newContent);
+        return { success: true, message: `.cursorrules: Added CodeImpact section` };
+      }
+    } else {
+      // Create new .cursorrules
+      writeFileSync(cursorRulesPath, codeimpactSection.trim() + '\n');
+      return { success: true, message: `.cursorrules: Created with CodeImpact instructions` };
+    }
+  } catch (err) {
+    return { success: false, message: `.cursorrules: Failed - ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
 // Helper to configure OpenCode's opencode.json (uses a different format than other MCP clients)
 function configureOpenCode(
   projectPath: string
@@ -955,7 +1125,8 @@ export function initProject(projectPath?: string): CommandResult {
     configuredClients.push(claudeCodeResult.message);
   }
 
-  // 5. Configure Cursor
+  // 5. Configure Cursor (both global and project-level)
+  // 5a. Global Cursor MCP config
   let cursorConfigPath: string;
   if (platform === 'win32') {
     cursorConfigPath = join(homedir(), 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
@@ -965,9 +1136,25 @@ export function initProject(projectPath?: string): CommandResult {
     cursorConfigPath = join(homedir(), '.config', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
   }
 
-  const cursorResult = configureMCPClient('Cursor', cursorConfigPath, serverName, targetPath);
-  if (cursorResult.success) {
-    configuredClients.push(cursorResult.message);
+  const cursorGlobalResult = configureMCPClient('Cursor (global)', cursorConfigPath, serverName, targetPath);
+  if (cursorGlobalResult.success) {
+    configuredClients.push(cursorGlobalResult.message);
+  }
+
+  // 5b. Project-level Cursor MCP config (.cursor/mcp.json)
+  const cursorProjectResult = configureCursorProjectMCP(targetPath);
+  if (cursorProjectResult.success) {
+    configuredClients.push(cursorProjectResult.message);
+  } else {
+    failedClients.push(cursorProjectResult.message);
+  }
+
+  // 5c. Cursor rules file (.cursorrules)
+  const cursorRulesResult = configureCursorRules(targetPath);
+  if (cursorRulesResult.success) {
+    configuredClients.push(cursorRulesResult.message);
+  } else {
+    failedClients.push(cursorRulesResult.message);
   }
 
   // 6. Configure CLAUDE.md with tool preferences
