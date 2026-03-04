@@ -37,6 +37,66 @@ export interface DeadCodeReport {
   safeToDelete: UnusedExport[]; // High confidence items
 }
 
+// ==================== Framework Detection ====================
+
+/**
+ * Next.js special files that are used by the framework, not imported directly.
+ * These files export components/handlers that Next.js calls automatically.
+ */
+const NEXTJS_SPECIAL_FILES = new Set([
+  'page', 'layout', 'loading', 'error', 'not-found', 'template',
+  'default', 'route', 'middleware', 'instrumentation',
+  'apple-icon', 'icon', 'opengraph-image', 'twitter-image',
+  'sitemap', 'robots', 'manifest',
+]);
+
+/**
+ * Next.js special exports that are read by the framework.
+ */
+const NEXTJS_SPECIAL_EXPORTS = new Set([
+  // Metadata
+  'metadata', 'generateMetadata', 'generateStaticParams',
+  // Route segment config
+  'dynamic', 'dynamicParams', 'revalidate', 'fetchCache',
+  'runtime', 'preferredRegion', 'maxDuration',
+  // Image exports
+  'size', 'contentType', 'alt',
+  // API route handlers
+  'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS',
+  // Middleware
+  'config', 'matcher',
+]);
+
+/**
+ * Config files that are loaded by tools, not imported.
+ */
+const CONFIG_FILE_PATTERNS = [
+  /eslint\.config\.(m?js|ts)$/i,
+  /next\.config\.(m?js|ts)$/i,
+  /tailwind\.config\.(js|ts|cjs|mjs)$/i,
+  /postcss\.config\.(js|ts|cjs|mjs)$/i,
+  /vite\.config\.(js|ts|mjs)$/i,
+  /vitest\.config\.(js|ts|mts)$/i,
+  /webpack\.config\.(js|ts)$/i,
+  /jest\.config\.(js|ts|mjs)$/i,
+  /babel\.config\.(js|json|cjs)$/i,
+  /prettier\.config\.(js|ts|cjs|mjs)$/i,
+  /tsconfig.*\.json$/i,
+  /package\.json$/i,
+  /\.env(\..*)?$/i,
+];
+
+/**
+ * Directories that indicate framework-managed files.
+ */
+const FRAMEWORK_DIRS = [
+  '/app/',        // Next.js App Router
+  '/pages/',      // Next.js Pages Router
+  '/api/',        // API routes
+  '/.next/',      // Next.js build output
+  '/public/',     // Static assets
+];
+
 /**
  * DeadCodeDetector - Finds unused exports and files in a codebase.
  *
@@ -49,6 +109,7 @@ export interface DeadCodeReport {
  * - Re-exports which may be used by external consumers
  * - Test files which are run by test frameworks
  * - Dynamic imports which can't be statically analyzed
+ * - Framework conventions (Next.js, React, etc.)
  */
 export class DeadCodeDetector {
   private tier2: Tier2Storage;
@@ -146,29 +207,65 @@ export class DeadCodeDetector {
     const allExports = this.tier2.getAllExports();
     const allFiles = this.tier2.getAllFiles().filter(f => this.isCodeFile(f.path));
 
-    // Estimate dead lines from unused files (excluding entry points)
+    // Filter out framework files from unused exports for accurate counts
+    const nonFrameworkExports = unusedExports.filter(e => !this.isFrameworkExport(e));
+
+    // Estimate dead lines from unused files (excluding entry points and framework files)
     const estimatedDeadLines = unusedFiles
-      .filter(f => !f.isEntryPoint && f.confidence >= 70)
+      .filter(f => !f.isEntryPoint && f.confidence >= 50 && !this.isFrameworkFile(f.filePath.replace(/\\/g, '/').toLowerCase()))
       .reduce((sum, f) => sum + f.lineCount, 0);
 
-    // Calculate overall confidence
-    const highConfidenceExports = unusedExports.filter(e => e.confidence >= 80);
-    const overallConfidence = unusedExports.length > 0
-      ? Math.round(highConfidenceExports.length / unusedExports.length * 100)
+    // Calculate overall confidence (only for non-framework exports)
+    const highConfidenceExports = nonFrameworkExports.filter(e => e.confidence >= 80);
+    const overallConfidence = nonFrameworkExports.length > 0
+      ? Math.round(highConfidenceExports.length / nonFrameworkExports.length * 100)
       : 100;
 
-    // Items safe to delete (high confidence)
-    const safeToDelete = unusedExports.filter(e => e.confidence >= 85);
+    // Items safe to delete (high confidence, non-framework)
+    const safeToDelete = nonFrameworkExports.filter(e => e.confidence >= 85);
 
     return {
-      unusedExports,
-      unusedFiles,
+      unusedExports: nonFrameworkExports,
+      unusedFiles: unusedFiles.filter(f => f.confidence >= 30), // Filter very low confidence
       totalExports: allExports.length,
       totalFiles: allFiles.length,
       estimatedDeadLines,
       overallConfidence,
       safeToDelete,
     };
+  }
+
+  /**
+   * Check if an export is a framework export (Next.js, etc.)
+   */
+  private isFrameworkExport(exp: UnusedExport): boolean {
+    const normalizedPath = exp.filePath.replace(/\\/g, '/').toLowerCase();
+    const fileName = normalizedPath.split('/').pop() || '';
+    const fileBaseName = fileName.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/, '');
+
+    // Next.js special files
+    if (NEXTJS_SPECIAL_FILES.has(fileBaseName)) {
+      if (normalizedPath.includes('/app/') || normalizedPath.includes('/pages/')) {
+        return true;
+      }
+    }
+
+    // Next.js special exports
+    if (NEXTJS_SPECIAL_EXPORTS.has(exp.exportedName)) {
+      return true;
+    }
+
+    // Config files
+    if (this.isConfigFile(normalizedPath)) {
+      return true;
+    }
+
+    // Middleware
+    if (fileBaseName === 'middleware') {
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -400,6 +497,34 @@ export class DeadCodeDetector {
 
     const normalizedPath = exp.filePath.replace(/\\/g, '/').toLowerCase();
     const fileName = normalizedPath.split('/').pop() || '';
+    const fileBaseName = fileName.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/, '');
+
+    // ==================== Framework Detection ====================
+
+    // Next.js special files (page.tsx, layout.tsx, etc.) - very low confidence
+    if (NEXTJS_SPECIAL_FILES.has(fileBaseName)) {
+      // Check if it's in app/ or pages/ directory
+      if (normalizedPath.includes('/app/') || normalizedPath.includes('/pages/')) {
+        confidence -= 70; // These are framework-managed
+      }
+    }
+
+    // Next.js special exports (metadata, dynamic, GET, etc.)
+    if (NEXTJS_SPECIAL_EXPORTS.has(exp.exportedName)) {
+      confidence -= 60; // Framework reads these
+    }
+
+    // Middleware file
+    if (fileBaseName === 'middleware') {
+      confidence -= 60;
+    }
+
+    // Config file exports
+    if (this.isConfigFile(normalizedPath)) {
+      confidence -= 70; // Config files are loaded by tools
+    }
+
+    // ==================== General Patterns ====================
 
     // Lower confidence for index files (often re-export for external use)
     if (fileName.startsWith('index.')) {
@@ -408,7 +533,10 @@ export class DeadCodeDetector {
 
     // Lower confidence for default exports (commonly used by external tools)
     if (exp.isDefault) {
-      confidence -= 10;
+      // But only if not already handled by framework detection
+      if (!NEXTJS_SPECIAL_FILES.has(fileBaseName)) {
+        confidence -= 10;
+      }
     }
 
     // Lower confidence for exports in entry-point-like files
@@ -429,7 +557,35 @@ export class DeadCodeDetector {
     }
 
     // Ensure confidence stays in valid range
-    return Math.max(10, Math.min(100, confidence));
+    return Math.max(5, Math.min(100, confidence));
+  }
+
+  /**
+   * Check if a file is a config file (loaded by tools, not imported).
+   */
+  private isConfigFile(normalizedPath: string): boolean {
+    return CONFIG_FILE_PATTERNS.some(pattern => pattern.test(normalizedPath));
+  }
+
+  /**
+   * Check if a file is in a framework-managed directory.
+   */
+  private isFrameworkFile(normalizedPath: string): boolean {
+    // Next.js App Router files
+    if (normalizedPath.includes('/app/')) {
+      const fileName = normalizedPath.split('/').pop() || '';
+      const baseName = fileName.replace(/\.(ts|tsx|js|jsx)$/, '');
+      if (NEXTJS_SPECIAL_FILES.has(baseName)) {
+        return true;
+      }
+    }
+
+    // Next.js Pages Router
+    if (normalizedPath.includes('/pages/')) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -437,6 +593,35 @@ export class DeadCodeDetector {
    */
   private calculateFileConfidence(filePath: string, isEntryPoint: boolean, exportCount: number): number {
     let confidence = 85; // Start reasonably high
+
+    const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
+    const fileName = normalizedPath.split('/').pop() || '';
+    const fileBaseName = fileName.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/, '');
+
+    // ==================== Framework Detection ====================
+
+    // Next.js special files in app/ or pages/ directories
+    if (NEXTJS_SPECIAL_FILES.has(fileBaseName)) {
+      if (normalizedPath.includes('/app/') || normalizedPath.includes('/pages/')) {
+        confidence -= 70; // Framework-managed files
+      }
+    }
+
+    // Middleware file at root
+    if (fileBaseName === 'middleware' && (
+      normalizedPath.includes('/src/middleware') ||
+      normalizedPath.endsWith('/middleware.ts') ||
+      normalizedPath.endsWith('/middleware.js')
+    )) {
+      confidence -= 70;
+    }
+
+    // Config files
+    if (this.isConfigFile(normalizedPath)) {
+      confidence -= 70;
+    }
+
+    // ==================== General Patterns ====================
 
     // Entry points are likely used externally
     if (isEntryPoint) {
@@ -455,8 +640,6 @@ export class DeadCodeDetector {
       confidence -= 20;
     }
 
-    const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
-
     // Type definition files might be used by external tools
     if (normalizedPath.endsWith('.d.ts')) {
       confidence -= 30;
@@ -467,7 +650,14 @@ export class DeadCodeDetector {
       confidence -= 20;
     }
 
-    return Math.max(10, Math.min(100, confidence));
+    // Test files are run by test frameworks
+    if (normalizedPath.includes('.test.') || normalizedPath.includes('.spec.') ||
+        normalizedPath.includes('__tests__/') || normalizedPath.includes('/test/') ||
+        normalizedPath.includes('/tests/')) {
+      confidence -= 50;
+    }
+
+    return Math.max(5, Math.min(100, confidence));
   }
 
   /**
