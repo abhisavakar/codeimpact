@@ -1791,11 +1791,11 @@ export class CodeImpactEngine {
 
   /**
    * Record token usage for a query.
-   * Call this after each query to track usage and calculate savings.
+   * Call this after each query to track usage.
    */
-  recordTokenUsage(queryType: string, tokensUsed: number, tokensSaved?: number): void {
+  recordTokenUsage(queryType: string, tokensUsed: number): void {
     const tracker = new CostTracker(this.tier2);
-    tracker.recordUsage(queryType, tokensUsed, tokensSaved);
+    tracker.recordUsage(queryType, tokensUsed);
   }
 
   /**

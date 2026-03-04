@@ -14,23 +14,17 @@ export interface UsageStats {
   periodEnd: Date;
   totalQueries: number;
   totalTokensUsed: number;
-  totalTokensSaved: number;
   totalCostDollars: number;
-  estimatedCostWithoutCodeImpact: number;
-  estimatedSavings: number;
-  savingsPercent: number;
   byQueryType: Array<{
     queryType: string;
     queries: number;
     tokensUsed: number;
-    tokensSaved: number;
     costDollars: number;
   }>;
   dailyUsage: Array<{
     date: string;
     queries: number;
     tokensUsed: number;
-    tokensSaved: number;
     costDollars: number;
   }>;
 }
@@ -46,20 +40,15 @@ const PRICING = {
 
   // Default to Sonnet pricing
   DEFAULT_PER_1K: 0.006,
-
-  // Multiplier for estimated tokens without CodeImpact
-  // Without focused context, queries typically need 3-5x more tokens
-  BASELINE_MULTIPLIER: 4,
 };
 
 /**
- * CostTracker - Tracks token usage and calculates cost savings.
+ * CostTracker - Tracks token usage for CodeImpact queries.
  *
  * Features:
  * 1. Records token usage for each query
- * 2. Estimates cost savings from focused context
- * 3. Provides stats by period (day, week, month)
- * 4. Generates reports showing ROI
+ * 2. Provides stats by period (day, week, month)
+ * 3. Generates usage reports
  */
 export class CostTracker {
   private tier2: Tier2Storage;
@@ -72,22 +61,12 @@ export class CostTracker {
    * Record a token usage event.
    *
    * @param queryType - Type of query (get_context, search, etc.)
-   * @param tokensUsed - Tokens actually used with CodeImpact
-   * @param tokensSaved - Estimated tokens saved (optional, calculated if not provided)
+   * @param tokensUsed - Tokens used for this query
    */
-  recordUsage(
-    queryType: string,
-    tokensUsed: number,
-    tokensSaved?: number
-  ): void {
-    // Estimate tokens saved if not provided
-    // Without CodeImpact, we estimate the query would need BASELINE_MULTIPLIER times more tokens
-    const saved = tokensSaved ?? Math.round(tokensUsed * (PRICING.BASELINE_MULTIPLIER - 1));
-
+  recordUsage(queryType: string, tokensUsed: number): void {
     // Calculate cost
     const costDollars = (tokensUsed / 1000) * PRICING.DEFAULT_PER_1K;
-
-    this.tier2.recordTokenUsage(queryType, tokensUsed, saved, costDollars);
+    this.tier2.recordTokenUsage(queryType, tokensUsed, costDollars);
   }
 
   /**
@@ -102,27 +81,13 @@ export class CostTracker {
     const stats = this.tier2.getTokenUsageStats(sinceTimestamp);
     const dailyUsage = this.tier2.getDailyTokenUsage(this.getPeriodDays(period));
 
-    // Calculate estimated cost without CodeImpact
-    const estimatedCostWithoutCodeImpact =
-      ((stats.totalTokensUsed + stats.totalTokensSaved) / 1000) * PRICING.DEFAULT_PER_1K;
-
-    // Calculate savings
-    const estimatedSavings = estimatedCostWithoutCodeImpact - stats.totalCostDollars;
-    const savingsPercent = estimatedCostWithoutCodeImpact > 0
-      ? Math.round((estimatedSavings / estimatedCostWithoutCodeImpact) * 100)
-      : 0;
-
     return {
       period,
       periodStart,
       periodEnd: now,
       totalQueries: stats.totalQueries,
       totalTokensUsed: stats.totalTokensUsed,
-      totalTokensSaved: stats.totalTokensSaved,
       totalCostDollars: stats.totalCostDollars,
-      estimatedCostWithoutCodeImpact,
-      estimatedSavings,
-      savingsPercent,
       byQueryType: stats.byQueryType,
       dailyUsage,
     };
@@ -135,7 +100,7 @@ export class CostTracker {
     const lines: string[] = [];
 
     lines.push('='.repeat(60));
-    lines.push('CODEIMPACT USAGE & COST REPORT');
+    lines.push('CODEIMPACT USAGE REPORT');
     lines.push('='.repeat(60));
     lines.push('');
 
@@ -150,15 +115,7 @@ export class CostTracker {
     lines.push('-'.repeat(40));
     lines.push(`Total queries:        ${stats.totalQueries.toLocaleString()}`);
     lines.push(`Tokens used:          ${this.formatTokens(stats.totalTokensUsed)}`);
-    lines.push(`Tokens saved:         ${this.formatTokens(stats.totalTokensSaved)}`);
-    lines.push('');
-
-    // Cost
-    lines.push('COST ANALYSIS');
-    lines.push('-'.repeat(40));
-    lines.push(`Actual cost (with CodeImpact):     $${stats.totalCostDollars.toFixed(2)}`);
-    lines.push(`Est. cost (without CodeImpact):    $${stats.estimatedCostWithoutCodeImpact.toFixed(2)}`);
-    lines.push(`Estimated savings:                 $${stats.estimatedSavings.toFixed(2)} (${stats.savingsPercent}%)`);
+    lines.push(`Estimated cost:       $${stats.totalCostDollars.toFixed(2)}`);
     lines.push('');
 
     // By query type
@@ -170,7 +127,7 @@ export class CostTracker {
           ? Math.round((qt.tokensUsed / stats.totalTokensUsed) * 100)
           : 0;
         lines.push(`  ${qt.queryType}:`);
-        lines.push(`    Queries: ${qt.queries}, Tokens: ${this.formatTokens(qt.tokensUsed)} (${pct}%)`);
+        lines.push(`    Queries: ${qt.queries}, Tokens: ${this.formatTokens(qt.tokensUsed)} (${pct}%), Cost: $${qt.costDollars.toFixed(2)}`);
       }
       if (stats.byQueryType.length > 10) {
         lines.push(`  ... and ${stats.byQueryType.length - 10} more types`);
@@ -183,17 +140,8 @@ export class CostTracker {
       lines.push('DAILY USAGE (recent)');
       lines.push('-'.repeat(40));
       for (const day of stats.dailyUsage.slice(0, 7)) {
-        lines.push(`  ${day.date}: ${day.queries} queries, ${this.formatTokens(day.tokensUsed)}`);
+        lines.push(`  ${day.date}: ${day.queries} queries, ${this.formatTokens(day.tokensUsed)}, $${day.costDollars.toFixed(2)}`);
       }
-      lines.push('');
-    }
-
-    // ROI message
-    if (stats.estimatedSavings > 0) {
-      lines.push('ROI');
-      lines.push('-'.repeat(40));
-      lines.push(`  CodeImpact has saved you approximately $${stats.estimatedSavings.toFixed(2)}`);
-      lines.push(`  by providing focused, relevant context instead of raw file dumps.`);
       lines.push('');
     }
 
@@ -215,13 +163,7 @@ export class CostTracker {
       usage: {
         totalQueries: stats.totalQueries,
         totalTokensUsed: stats.totalTokensUsed,
-        totalTokensSaved: stats.totalTokensSaved,
-      },
-      cost: {
-        actualCost: Math.round(stats.totalCostDollars * 100) / 100,
-        estimatedCostWithoutCodeImpact: Math.round(stats.estimatedCostWithoutCodeImpact * 100) / 100,
-        estimatedSavings: Math.round(stats.estimatedSavings * 100) / 100,
-        savingsPercent: stats.savingsPercent,
+        totalCostDollars: Math.round(stats.totalCostDollars * 100) / 100,
       },
       byQueryType: stats.byQueryType,
       dailyUsage: stats.dailyUsage,

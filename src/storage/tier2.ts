@@ -1214,14 +1214,13 @@ export class Tier2Storage {
   recordTokenUsage(
     queryType: string,
     tokensUsed: number,
-    tokensSaved: number = 0,
     costDollars: number = 0
   ): void {
     const stmt = this.db.prepare(`
-      INSERT INTO token_usage (query_type, tokens_used, tokens_saved, cost_dollars)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO token_usage (query_type, tokens_used, cost_dollars)
+      VALUES (?, ?, ?)
     `);
-    stmt.run(queryType, tokensUsed, tokensSaved, costDollars);
+    stmt.run(queryType, tokensUsed, costDollars);
   }
 
   /**
@@ -1230,13 +1229,11 @@ export class Tier2Storage {
   getTokenUsageStats(sinceTimestamp: number): {
     totalQueries: number;
     totalTokensUsed: number;
-    totalTokensSaved: number;
     totalCostDollars: number;
     byQueryType: Array<{
       queryType: string;
       queries: number;
       tokensUsed: number;
-      tokensSaved: number;
       costDollars: number;
     }>;
   } {
@@ -1245,7 +1242,6 @@ export class Tier2Storage {
       SELECT
         COUNT(*) as totalQueries,
         COALESCE(SUM(tokens_used), 0) as totalTokensUsed,
-        COALESCE(SUM(tokens_saved), 0) as totalTokensSaved,
         COALESCE(SUM(cost_dollars), 0) as totalCostDollars
       FROM token_usage
       WHERE timestamp >= ?
@@ -1253,7 +1249,6 @@ export class Tier2Storage {
     const totals = totalsStmt.get(sinceTimestamp) as {
       totalQueries: number;
       totalTokensUsed: number;
-      totalTokensSaved: number;
       totalCostDollars: number;
     };
 
@@ -1263,7 +1258,6 @@ export class Tier2Storage {
         query_type as queryType,
         COUNT(*) as queries,
         COALESCE(SUM(tokens_used), 0) as tokensUsed,
-        COALESCE(SUM(tokens_saved), 0) as tokensSaved,
         COALESCE(SUM(cost_dollars), 0) as costDollars
       FROM token_usage
       WHERE timestamp >= ?
@@ -1274,14 +1268,12 @@ export class Tier2Storage {
       queryType: string;
       queries: number;
       tokensUsed: number;
-      tokensSaved: number;
       costDollars: number;
     }>;
 
     return {
       totalQueries: totals.totalQueries,
       totalTokensUsed: totals.totalTokensUsed,
-      totalTokensSaved: totals.totalTokensSaved,
       totalCostDollars: totals.totalCostDollars,
       byQueryType,
     };
@@ -1293,9 +1285,7 @@ export class Tier2Storage {
   getTokenUsageSummary(): {
     totalQueries: number;
     totalTokensUsed: number;
-    totalTokensSaved: number;
     totalCostDollars: number;
-    estimatedCostWithoutCodeImpact: number;
     firstUsage: number | null;
     lastUsage: number | null;
   } {
@@ -1303,29 +1293,17 @@ export class Tier2Storage {
       SELECT
         COUNT(*) as totalQueries,
         COALESCE(SUM(tokens_used), 0) as totalTokensUsed,
-        COALESCE(SUM(tokens_saved), 0) as totalTokensSaved,
         COALESCE(SUM(cost_dollars), 0) as totalCostDollars,
         MIN(timestamp) as firstUsage,
         MAX(timestamp) as lastUsage
       FROM token_usage
     `);
-    const result = stmt.get() as {
+    return stmt.get() as {
       totalQueries: number;
       totalTokensUsed: number;
-      totalTokensSaved: number;
       totalCostDollars: number;
       firstUsage: number | null;
       lastUsage: number | null;
-    };
-
-    // Estimate what it would have cost without CodeImpact's focused context
-    // Assume without CodeImpact, queries would use 3-5x more tokens
-    const estimatedCostWithoutCodeImpact = result.totalCostDollars +
-      (result.totalTokensSaved * 0.00006); // Approximate Claude cost per token
-
-    return {
-      ...result,
-      estimatedCostWithoutCodeImpact,
     };
   }
 
@@ -1336,7 +1314,6 @@ export class Tier2Storage {
     date: string;
     queries: number;
     tokensUsed: number;
-    tokensSaved: number;
     costDollars: number;
   }> {
     const stmt = this.db.prepare(`
@@ -1344,7 +1321,6 @@ export class Tier2Storage {
         date(timestamp, 'unixepoch') as date,
         COUNT(*) as queries,
         COALESCE(SUM(tokens_used), 0) as tokensUsed,
-        COALESCE(SUM(tokens_saved), 0) as tokensSaved,
         COALESCE(SUM(cost_dollars), 0) as costDollars
       FROM token_usage
       WHERE timestamp >= unixepoch('now', ?)
@@ -1355,7 +1331,6 @@ export class Tier2Storage {
       date: string;
       queries: number;
       tokensUsed: number;
-      tokensSaved: number;
       costDollars: number;
     }>;
   }

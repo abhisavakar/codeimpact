@@ -18,7 +18,7 @@ CodeImpact is an MCP server that indexes your codebase and gives AI assistants l
 - **Dead code detection** - Finds unused exports and orphan files with confidence scoring
 - **Test impact analysis** - Shows which tests to run when you change a file
 - **Blast radius analysis** - Risk scoring and critical path detection for any file change
-- **Cost tracking** - Monitors token usage and calculates savings from focused context
+- **Cost tracking** - Monitors token usage and costs for CodeImpact queries
 - **Detects circular dependencies** - Finds import cycles in your codebase
 - **Indexes tests** - Identifies test files and what source files they cover
 - **Records decisions** - Stores architectural decisions that persist across sessions
@@ -103,9 +103,9 @@ Critical paths affected: src/api/checkout.ts, src/billing/payments.ts
 Recommendation: Senior review required
 ```
 
-### Cost & Token Dashboard
+### Usage Dashboard
 
-Track token usage and see how much CodeImpact saves you:
+Track token usage and costs for CodeImpact queries:
 
 ```bash
 codeimpact stats
@@ -117,9 +117,8 @@ codeimpact stats --period all --json
 ```
 This Month:
 - Queries: 1,247
-- Tokens used: 892K (with CodeImpact context optimization)
-- Tokens WITHOUT optimization: ~3.2M (estimated)
-- Savings: ~2.3M tokens = ~$138 saved
+- Tokens used: 892K
+- Estimated cost: $5.35
 ```
 
 ---
@@ -216,7 +215,7 @@ codeimpact serve             # Start HTTP API server
 codeimpact deadcode          # Find unused exports and dead code
 codeimpact test-impact       # Find which tests to run for changes
 codeimpact impact <file>     # Analyze blast radius of a file
-codeimpact stats             # Show token usage and cost savings
+codeimpact stats             # Show token usage and costs
 
 # Project Management
 codeimpact projects list     # List registered projects
