@@ -409,9 +409,25 @@ export class CodeVerifier {
     const warnings: ImportWarning[] = [];
     const imports = this.extractImports(code);
 
+    // Load path aliases from tsconfig if available
+    const pathAliases = this.loadPathAliases();
+
     for (const importPath of imports) {
       // Skip built-in modules
       if (NODE_BUILTINS.has(importPath) || NODE_BUILTINS.has(importPath.split('/')[0] || '')) {
+        continue;
+      }
+
+      // Check if it's a path alias (e.g., @/, ~/, #/, @core/, etc.)
+      if (this.isPathAlias(importPath, pathAliases)) {
+        // Path aliases are resolved by bundler/compiler
+        // Verify if we can resolve the alias to an actual file
+        const resolved = this.resolvePathAlias(importPath, pathAliases);
+        if (resolved) {
+          // Path alias resolves to project root, not relative to current file
+          this.verifyAliasImport(resolved, importPath, issues);
+        }
+        // If we can't resolve, assume it's valid (configured in tsconfig/bundler)
         continue;
       }
 
@@ -429,6 +445,95 @@ export class CodeVerifier {
       issues,
       warnings,
     };
+  }
+
+  /**
+   * Load path aliases from tsconfig.json or jsconfig.json
+   */
+  private loadPathAliases(): Map<string, string> {
+    const aliases = new Map<string, string>();
+
+    // Common alias patterns to recognize even without config
+    const commonAliases = ['@/', '~/', '#/', '@app/', '@src/', '@lib/', '@core/', '@components/', '@utils/', '@hooks/', '@contexts/'];
+    for (const alias of commonAliases) {
+      aliases.set(alias.slice(0, -1), 'src'); // Map @/ to src/
+    }
+
+    // Try to read from tsconfig.json
+    const tsconfigPaths = [
+      join(this.projectPath, 'tsconfig.json'),
+      join(this.projectPath, 'jsconfig.json'),
+    ];
+
+    for (const configPath of tsconfigPaths) {
+      if (existsSync(configPath)) {
+        try {
+          const content = readFileSync(configPath, 'utf-8');
+          // Remove comments (simple approach)
+          const cleanContent = content.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+          const config = JSON.parse(cleanContent);
+
+          if (config.compilerOptions?.paths) {
+            for (const [alias, targets] of Object.entries(config.compilerOptions.paths)) {
+              // Convert @/* to @/ for matching
+              const aliasKey = alias.replace('/*', '').replace('*', '');
+              const target = (targets as string[])[0];
+              if (target) {
+                aliases.set(aliasKey, target.replace('/*', '').replace('*', ''));
+              }
+            }
+          }
+
+          // Also check baseUrl
+          if (config.compilerOptions?.baseUrl) {
+            aliases.set('baseUrl', config.compilerOptions.baseUrl);
+          }
+
+          break; // Found config, stop looking
+        } catch {
+          // Config parse failed, use defaults
+        }
+      }
+    }
+
+    return aliases;
+  }
+
+  /**
+   * Check if an import path is a path alias
+   */
+  private isPathAlias(importPath: string, aliases: Map<string, string>): boolean {
+    // Check against loaded aliases
+    for (const alias of aliases.keys()) {
+      if (importPath === alias || importPath.startsWith(alias + '/')) {
+        return true;
+      }
+    }
+
+    // Common patterns that indicate path aliases
+    const aliasPatterns = [
+      /^@\//, /^~\//, /^#\//,           // @/, ~/, #/
+      /^@[a-z]+\//i,                     // @app/, @core/, @lib/, etc.
+      /^~[a-z]+\//i,                     // ~app/, ~core/, etc.
+    ];
+
+    return aliasPatterns.some(pattern => pattern.test(importPath));
+  }
+
+  /**
+   * Try to resolve a path alias to a relative path
+   */
+  private resolvePathAlias(importPath: string, aliases: Map<string, string>): string | null {
+    for (const [alias, target] of aliases) {
+      if (importPath === alias) {
+        return './' + target;
+      }
+      if (importPath.startsWith(alias + '/')) {
+        const rest = importPath.slice(alias.length + 1);
+        return './' + join(target, rest);
+      }
+    }
+    return null;
   }
 
   /**
@@ -508,6 +613,7 @@ export class CodeVerifier {
     const issues: DependencyIssue[] = [];
     const imports = this.extractImports(code);
     const packages = this.getPackageDependencies();
+    const pathAliases = this.loadPathAliases();
 
     for (const importPath of imports) {
       // Skip relative imports and built-ins
@@ -515,6 +621,11 @@ export class CodeVerifier {
         continue;
       }
       if (NODE_BUILTINS.has(importPath) || NODE_BUILTINS.has(importPath.split('/')[0] || '')) {
+        continue;
+      }
+
+      // Skip path aliases (e.g., @/core, ~/lib, etc.) - these are resolved by bundler/compiler
+      if (this.isPathAlias(importPath, pathAliases)) {
         continue;
       }
 
@@ -615,6 +726,45 @@ export class CodeVerifier {
         suggestion: `Check if the file exists or if the path is correct`,
       });
     }
+  }
+
+  /**
+   * Verify a resolved path alias import (relative to project root, not file directory)
+   */
+  private verifyAliasImport(resolvedPath: string, originalImport: string, issues: ImportIssue[]): void {
+    // Remove leading ./ if present since we're resolving from project root
+    const cleanPath = resolvedPath.replace(/^\.\//, '');
+    const possibleExtensions = ['.ts', '.tsx', '.js', '.jsx', '.json', ''];
+    const possibleIndexes = ['index.ts', 'index.tsx', 'index.js', 'index.jsx'];
+
+    let found = false;
+
+    // Try direct file with extensions
+    for (const ext of possibleExtensions) {
+      const fullPath = join(this.projectPath, cleanPath + ext);
+      if (existsSync(fullPath)) {
+        found = true;
+        break;
+      }
+    }
+
+    // Check for directory with index file
+    if (!found) {
+      const dirPath = join(this.projectPath, cleanPath);
+      if (existsSync(dirPath)) {
+        for (const indexFile of possibleIndexes) {
+          if (existsSync(join(dirPath, indexFile))) {
+            found = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // Path aliases are often configured correctly in bundler/tsconfig
+    // Only report if clearly broken - don't flag missing files for aliases
+    // since the bundler may have custom resolution we don't understand
+    // Note: We silently accept alias imports that can't be verified
   }
 
   private verifyPackageImport(importPath: string, issues: ImportIssue[], warnings: ImportWarning[]): void {

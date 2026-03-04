@@ -323,12 +323,28 @@ export class CodeImpactEngine {
 
   /**
    * Get the current engine status for visibility
+   * Shows database file count when not actively indexing (fixes 0/537 display bug)
    */
   getEngineStatus(): { status: string; ready: boolean; indexing: { indexed: number; total: number } } {
+    // When not actively indexing, show actual database counts instead of runtime counter
+    // This fixes the misleading "0/537" display after server restart
+    const isActivelyIndexing = this.indexer.isCurrentlyIndexing();
+
+    let indexingInfo: { indexed: number; total: number };
+
+    if (isActivelyIndexing) {
+      // During active indexing, show progress
+      indexingInfo = this.indexingProgress;
+    } else {
+      // When idle, show actual indexed file count from database
+      const dbFileCount = this.tier2.getFileCount();
+      indexingInfo = { indexed: dbFileCount, total: dbFileCount };
+    }
+
     return {
       status: this.initializationStatus,
       ready: this.initialized,
-      indexing: this.indexingProgress
+      indexing: indexingInfo
     };
   }
 

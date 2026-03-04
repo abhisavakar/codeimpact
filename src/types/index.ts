@@ -61,6 +61,7 @@ export interface FileMetadata {
   preview: string;
   language: string;
   sizeBytes: number;
+  lineCount: number;
   lastModified: number;
   indexedAt: number;
 }

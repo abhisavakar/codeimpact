@@ -19,24 +19,30 @@ export class ArchitectureGenerator {
     'api': 'API Layer',
     'routes': 'API Layer',
     'controllers': 'API Layer',
+    'routers': 'API Layer',
     'core': 'Business Logic',
     'services': 'Business Logic',
     'domain': 'Business Logic',
+    'modules': 'Business Logic',
     'storage': 'Data Layer',
     'db': 'Data Layer',
     'database': 'Data Layer',
     'repositories': 'Data Layer',
     'models': 'Data Layer',
+    'alembic': 'Data Layer',
+    'migrations': 'Data Layer',
     'utils': 'Utilities',
     'helpers': 'Utilities',
     'lib': 'Utilities',
     'types': 'Type Definitions',
     'interfaces': 'Type Definitions',
+    'schemas': 'Type Definitions',
     'indexing': 'Indexing Layer',
     'search': 'Indexing Layer',
     'components': 'UI Components',
     'views': 'UI Components',
     'pages': 'UI Components',
+    'app': 'UI Components',
     'hooks': 'React Hooks',
     'context': 'State Management',
     'store': 'State Management',
@@ -46,7 +52,34 @@ export class ArchitectureGenerator {
     'test': 'Testing',
     'tests': 'Testing',
     '__tests__': 'Testing',
-    'spec': 'Testing'
+    'spec': 'Testing',
+    'infrastructure': 'Infrastructure',
+    'docker': 'Infrastructure',
+    'terraform': 'Infrastructure'
+  };
+
+  // Monorepo package patterns - directories that contain their own src/app structure
+  private static MONOREPO_PATTERNS: RegExp[] = [
+    /^.*[-_]?backend$/i,
+    /^.*[-_]?frontend$/i,
+    /^.*[-_]?api$/i,
+    /^.*[-_]?web$/i,
+    /^.*[-_]?app$/i,
+    /^.*[-_]?server$/i,
+    /^.*[-_]?client$/i,
+    /^packages$/i,
+    /^apps$/i,
+  ];
+
+  // Monorepo package to layer type mapping
+  private static MONOREPO_LAYER_TYPES: Record<string, string> = {
+    'backend': 'Backend',
+    'frontend': 'Frontend',
+    'api': 'Backend',
+    'web': 'Frontend',
+    'app': 'Application',
+    'server': 'Backend',
+    'client': 'Frontend',
   };
 
   // Layer purpose descriptions
@@ -62,7 +95,11 @@ export class ArchitectureGenerator {
     'State Management': 'Application state management and data flow',
     'Configuration': 'Application configuration and environment setup',
     'CLI Interface': 'Command-line interface and commands',
-    'Testing': 'Test files and testing utilities'
+    'Testing': 'Test files and testing utilities',
+    'Infrastructure': 'Infrastructure as code, deployment, and DevOps configuration',
+    'Backend': 'Server-side application code and APIs',
+    'Frontend': 'Client-side application code and UI',
+    'Application': 'Main application code'
   };
 
   constructor(projectPath: string, tier2: Tier2Storage) {
@@ -90,51 +127,29 @@ export class ArchitectureGenerator {
   }
 
   private detectLayers(): ArchitectureLayer[] {
-    const layers: ArchitectureLayer[] = [];
     const layerMap = new Map<string, ArchitectureLayer>();
 
-    // Find src directory or use project root
-    const srcDir = existsSync(join(this.projectPath, 'src'))
-      ? join(this.projectPath, 'src')
-      : this.projectPath;
+    // First, check for monorepo structure at root
+    const monorepoPackages = this.detectMonorepoPackages();
 
-    // Scan top-level directories
-    try {
-      const entries = readdirSync(srcDir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-
-        const dirName = entry.name.toLowerCase();
-        const layerName = ArchitectureGenerator.LAYER_MAPPING[dirName];
-
-        if (layerName) {
-          const dirPath = join(srcDir, entry.name);
-          const relativePath = dirPath.replace(this.projectPath, '').replace(/^[/\\]/, '');
-          const files = this.getFilesInDirectory(relativePath);
-
-          if (files.length > 0) {
-            // Group by layer name
-            if (layerMap.has(layerName)) {
-              const existing = layerMap.get(layerName)!;
-              existing.files.push(...files);
-            } else {
-              layerMap.set(layerName, {
-                name: layerName,
-                directory: relativePath,
-                files,
-                purpose: ArchitectureGenerator.LAYER_PURPOSES[layerName] || ''
-              });
-            }
-          }
-        }
+    if (monorepoPackages.length > 0) {
+      // Monorepo: scan inside each package
+      for (const pkg of monorepoPackages) {
+        this.scanDirectoryForLayers(pkg.path, layerMap, pkg.name);
       }
-    } catch {
-      // Directory scan failed
+    } else {
+      // Standard project: scan src/ or root
+      const srcDir = existsSync(join(this.projectPath, 'src'))
+        ? join(this.projectPath, 'src')
+        : this.projectPath;
+      this.scanDirectoryForLayers(srcDir, layerMap);
     }
 
     // Sort layers by typical architecture order
     const layerOrder = [
+      'Backend',
+      'Frontend',
+      'Application',
       'CLI Interface',
       'API Layer',
       'UI Components',
@@ -146,16 +161,224 @@ export class ArchitectureGenerator {
       'Configuration',
       'Type Definitions',
       'Utilities',
+      'Infrastructure',
       'Testing'
     ];
 
+    const layers: ArchitectureLayer[] = [];
     for (const layerName of layerOrder) {
       if (layerMap.has(layerName)) {
         layers.push(layerMap.get(layerName)!);
       }
     }
 
+    // Add any remaining layers not in the order list
+    for (const [name, layer] of layerMap) {
+      if (!layerOrder.includes(name)) {
+        layers.push(layer);
+      }
+    }
+
     return layers;
+  }
+
+  /**
+   * Detect monorepo packages (directories that contain their own src/app structure)
+   */
+  private detectMonorepoPackages(): Array<{ name: string; path: string; type: string }> {
+    const packages: Array<{ name: string; path: string; type: string }> = [];
+
+    try {
+      const entries = readdirSync(this.projectPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('.')) continue;
+
+        const dirName = entry.name;
+        const dirPath = join(this.projectPath, dirName);
+
+        // Check if this matches monorepo patterns
+        const isMonorepoPackage = ArchitectureGenerator.MONOREPO_PATTERNS.some(
+          pattern => pattern.test(dirName)
+        );
+
+        if (isMonorepoPackage) {
+          // Verify it has a recognizable internal structure (src/, app/, or direct code)
+          const hasInternalStructure = this.hasCodeStructure(dirPath);
+
+          if (hasInternalStructure) {
+            // Determine the package type from the name
+            const type = this.inferPackageType(dirName);
+            packages.push({
+              name: dirName,
+              path: dirPath,
+              type
+            });
+          }
+        }
+      }
+    } catch {
+      // Directory scan failed
+    }
+
+    return packages;
+  }
+
+  /**
+   * Check if a directory has a recognizable code structure
+   */
+  private hasCodeStructure(dirPath: string): boolean {
+    const structureDirs = ['src', 'app', 'lib', 'core', 'api', 'components', 'pages', 'modules'];
+
+    try {
+      const entries = readdirSync(dirPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (entry.isDirectory() && structureDirs.includes(entry.name.toLowerCase())) {
+          return true;
+        }
+        // Also check for direct code files
+        if (entry.isFile() && this.isCodeFile(entry.name)) {
+          return true;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    return false;
+  }
+
+  /**
+   * Infer the package type from its name
+   */
+  private inferPackageType(dirName: string): string {
+    const lowerName = dirName.toLowerCase();
+
+    for (const [pattern, type] of Object.entries(ArchitectureGenerator.MONOREPO_LAYER_TYPES)) {
+      if (lowerName.includes(pattern)) {
+        return type;
+      }
+    }
+
+    return 'Application';
+  }
+
+  /**
+   * Scan a directory for architectural layers
+   */
+  private scanDirectoryForLayers(
+    scanDir: string,
+    layerMap: Map<string, ArchitectureLayer>,
+    packagePrefix?: string
+  ): void {
+    // Directories to scan: the given dir, plus src/ and app/ inside it
+    const dirsToScan: string[] = [scanDir];
+
+    const srcDir = join(scanDir, 'src');
+    const appDir = join(scanDir, 'app');
+
+    if (existsSync(srcDir)) dirsToScan.push(srcDir);
+    if (existsSync(appDir)) dirsToScan.push(appDir);
+
+    for (const dir of dirsToScan) {
+      try {
+        const entries = readdirSync(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          if (this.shouldSkipDirectory(entry.name)) continue;
+
+          const dirName = entry.name.toLowerCase();
+          let layerName = ArchitectureGenerator.LAYER_MAPPING[dirName];
+
+          // If this is a monorepo package root, use the package type as layer
+          if (!layerName && packagePrefix && dir === scanDir) {
+            const packageType = this.inferPackageType(packagePrefix);
+            layerName = packageType;
+          }
+
+          if (layerName) {
+            const dirPath = join(dir, entry.name);
+            const relativePath = dirPath.replace(this.projectPath, '').replace(/^[/\\]/, '');
+            const files = this.getFilesInDirectoryRecursive(relativePath, 2); // Limit depth
+
+            if (files.length > 0) {
+              // Create a unique key with package prefix if in monorepo
+              const layerKey = packagePrefix ? `${packagePrefix}/${layerName}` : layerName;
+              const displayName = packagePrefix ? `${layerName} (${packagePrefix})` : layerName;
+
+              if (layerMap.has(layerKey)) {
+                const existing = layerMap.get(layerKey)!;
+                existing.files.push(...files);
+              } else {
+                layerMap.set(layerKey, {
+                  name: displayName,
+                  directory: relativePath,
+                  files,
+                  purpose: ArchitectureGenerator.LAYER_PURPOSES[layerName] || ''
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // Directory scan failed
+      }
+    }
+
+    // If in a monorepo package and no layers found yet, add the package itself as a layer
+    if (packagePrefix && layerMap.size === 0) {
+      const packageType = this.inferPackageType(packagePrefix);
+      const relativePath = scanDir.replace(this.projectPath, '').replace(/^[/\\]/, '');
+      const files = this.getFilesInDirectoryRecursive(relativePath, 3);
+
+      if (files.length > 0) {
+        layerMap.set(packagePrefix, {
+          name: `${packageType} (${packagePrefix})`,
+          directory: relativePath,
+          files,
+          purpose: ArchitectureGenerator.LAYER_PURPOSES[packageType] || 'Application code'
+        });
+      }
+    }
+  }
+
+  /**
+   * Get files recursively up to a certain depth
+   */
+  private getFilesInDirectoryRecursive(relativePath: string, maxDepth: number, currentDepth = 0): string[] {
+    if (currentDepth > maxDepth) return [];
+
+    const files: string[] = [];
+    const absolutePath = join(this.projectPath, relativePath);
+
+    try {
+      const entries = readdirSync(absolutePath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const entryRelativePath = join(relativePath, entry.name);
+
+        if (entry.isFile() && this.isCodeFile(entry.name)) {
+          files.push(entryRelativePath);
+        } else if (entry.isDirectory() && !this.shouldSkipDirectory(entry.name)) {
+          files.push(...this.getFilesInDirectoryRecursive(entryRelativePath, maxDepth, currentDepth + 1));
+        }
+      }
+    } catch {
+      // Directory read failed
+    }
+
+    return files;
+  }
+
+  /**
+   * Check if a directory should be skipped during scanning
+   */
+  private shouldSkipDirectory(name: string): boolean {
+    const skipDirs = ['node_modules', '.git', 'dist', 'build', '.next', '__pycache__', '.pytest_cache', 'venv', '.venv', 'coverage'];
+    return skipDirs.includes(name) || name.startsWith('.');
   }
 
   private getFilesInDirectory(relativePath: string): string[] {

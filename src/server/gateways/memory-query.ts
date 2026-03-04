@@ -241,7 +241,8 @@ async function handleSummaryQuery(
 }
 
 /**
- * Symbol lookup
+ * Symbol lookup with fallback to semantic search
+ * If no symbols found in AST index, falls back to codebase search
  */
 async function handleSymbolQuery(
   engine: CodeImpactEngine,
@@ -281,6 +282,33 @@ async function handleSymbolQuery(
         symbols: deps.symbols,
       },
     };
+  }
+
+  // FALLBACK: If no symbols found, try semantic search
+  // This handles cases where AST parsing failed or symbols weren't indexed
+  if (results.length === 0) {
+    sourcesUsed.push('search_codebase_fallback');
+
+    const searchResults = await engine.searchCodebase(
+      symbolName,
+      input.max_results || 10
+    );
+
+    if (searchResults.length > 0) {
+      return {
+        sources_used: sourcesUsed,
+        symbols: [], // No AST symbols found
+        search_results: searchResults.map(r => ({
+          file: r.file,
+          preview: r.preview,
+          relevance: Math.round(r.relevance * 100),
+          line_start: r.lineStart,
+          line_end: r.lineEnd,
+        })),
+        fallback_used: true,
+        fallback_reason: 'No symbols found in AST index, used semantic search instead',
+      };
+    }
   }
 
   return {

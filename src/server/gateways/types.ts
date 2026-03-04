@@ -121,6 +121,10 @@ export interface MemoryQueryResponse {
     signature: string;
     similarity: number;
   }>;
+  /** Indicates if a fallback strategy was used */
+  fallback_used?: boolean;
+  /** Reason for using fallback */
+  fallback_reason?: string;
 }
 
 // ============================================================================

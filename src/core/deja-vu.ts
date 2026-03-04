@@ -67,6 +67,17 @@ export class DejaVuDetector {
   private readonly SIMILARITY_THRESHOLD = 0.7;
   private readonly MIN_USEFULNESS = 0.3;
   private readonly MAX_AGE_DAYS = 90;
+  private readonly MIN_AGE_SECONDS = 60; // Exclude queries from last minute (prevents self-matching)
+
+  // Files to filter from context (stubs, configs, generated files)
+  private readonly STUB_FILE_PATTERNS = [
+    /__init__\.py$/,           // Python package stubs
+    /\.d\.ts$/,                // TypeScript declaration files
+    /\.config\.(js|ts|mjs)$/,  // Config files
+    /next-env\.d\.ts$/,        // Next.js generated
+    /package-lock\.json$/,
+    /yarn\.lock$/,
+  ];
 
   constructor(
     db: Database.Database,
@@ -111,30 +122,45 @@ export class DejaVuDetector {
    */
   async searchPastQueries(query: string): Promise<DejaVuMatch[]> {
     const matches: DejaVuMatch[] = [];
+    const currentQueryHash = this.hashQuery(query);
 
     try {
       // Get query embedding
       const embedding = await this.embeddingGenerator.embed(query);
 
-      // Get recent useful queries
+      // Get recent useful queries - exclude very recent ones to prevent self-matching
       const stmt = this.db.prepare(`
         SELECT query_hash, query_text, result_files, avg_usefulness, last_used
         FROM query_patterns
         WHERE avg_usefulness >= ?
           AND last_used > unixepoch() - ? * 86400
+          AND last_used < unixepoch() - ?
         ORDER BY avg_usefulness DESC, last_used DESC
         LIMIT 50
       `);
 
-      const rows = stmt.all(this.MIN_USEFULNESS, this.MAX_AGE_DAYS) as QueryPatternRow[];
+      const rows = stmt.all(this.MIN_USEFULNESS, this.MAX_AGE_DAYS, this.MIN_AGE_SECONDS) as QueryPatternRow[];
 
       for (const row of rows) {
+        // Skip if this is the exact same query (by hash)
+        if (row.query_hash === currentQueryHash) {
+          continue;
+        }
+
         // Calculate text similarity
         const similarity = this.calculateTextSimilarity(query, row.query_text);
 
+        // Skip near-identical queries (similarity > 0.95 means it's basically the same question)
+        if (similarity > 0.95) {
+          continue;
+        }
+
         if (similarity >= this.SIMILARITY_THRESHOLD) {
           const resultFiles = this.parseJsonArray(row.result_files);
-          const primaryFile = resultFiles[0] || 'unknown';
+          // Filter out stub files from results
+          const meaningfulFiles = this.filterMeaningfulFiles(resultFiles);
+          const primaryFile = meaningfulFiles[0] || resultFiles[0] || 'unknown';
+          const contextFiles = meaningfulFiles.slice(1, 4);
 
           matches.push({
             type: 'query',
@@ -143,7 +169,7 @@ export class DejaVuDetector {
             file: primaryFile,
             snippet: row.query_text.slice(0, 100),
             message: formatTimeAgoWithContext(new Date(row.last_used * 1000), 'asked a similar question', primaryFile),
-            context: resultFiles.length > 1 ? `Also involved: ${resultFiles.slice(1, 4).join(', ')}` : undefined,
+            context: contextFiles.length > 0 ? `Also involved: ${contextFiles.join(', ')}` : undefined,
           });
         }
       }
@@ -412,6 +438,21 @@ export class DejaVuDetector {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Filter out stub/config files from file list
+   */
+  private filterMeaningfulFiles(files: string[]): string[] {
+    return files.filter(file => {
+      // Check against stub patterns
+      for (const pattern of this.STUB_FILE_PATTERNS) {
+        if (pattern.test(file)) {
+          return false;
+        }
+      }
+      return true;
+    });
   }
 
   private hashQuery(query: string): string {

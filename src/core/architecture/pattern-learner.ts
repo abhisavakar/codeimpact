@@ -1,6 +1,12 @@
+import { readFileSync, existsSync } from 'node:fs';
 import type { Tier2Storage } from '../../storage/tier2.js';
 import type { PatternCategory, CodeExample, PatternRule } from '../../types/documentation.js';
 import type { PatternLibrary } from './pattern-library.js';
+
+// File extensions to analyze for patterns
+const CODE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java'];
+// Max file size to read (100KB)
+const MAX_FILE_SIZE = 100 * 1024;
 
 // Pattern detection rules
 const PATTERN_DETECTORS: Array<{
@@ -15,7 +21,7 @@ const PATTERN_DETECTORS: Array<{
     name: 'Try-Catch Pattern',
     detect: /try\s*\{[\s\S]*?\}\s*catch\s*\(/,
     extractExample: (code: string) => {
-      const match = code.match(/try\s*\{[\s\S]*?\}\s*catch\s*\([^)]*\)\s*\{[\s\S]*?\}/);
+      const match = code.match(/try\s*\{[\s\S]{10,200}?\}\s*catch\s*\([^)]*\)\s*\{[\s\S]{5,150}?\}/);
       return match ? match[0] : null;
     },
     rules: [
@@ -26,9 +32,9 @@ const PATTERN_DETECTORS: Array<{
   {
     category: 'api_call',
     name: 'Fetch API Pattern',
-    detect: /fetch\s*\(|axios\.|api\./,
+    detect: /fetch\s*\(|axios\.|api\.(?:get|post|put|delete|patch)/i,
     extractExample: (code: string) => {
-      const match = code.match(/(?:await\s+)?(?:fetch|axios\.\w+|api\.\w+)\s*\([^)]*\)[\s\S]*?(?:\.json\(\)|;)/);
+      const match = code.match(/(?:const|let)\s+\w+\s*=\s*(?:await\s+)?(?:fetch|axios\.\w+|api\.\w+)\s*\([^)]+\)[\s\S]{0,100}?(?:\.json\(\)|;)/);
       return match ? match[0] : null;
     },
     rules: [
@@ -39,9 +45,9 @@ const PATTERN_DETECTORS: Array<{
   {
     category: 'component',
     name: 'React Component Pattern',
-    detect: /(?:function|const)\s+\w+\s*(?::\s*React\.FC|\([^)]*\))\s*(?:=>|{)/,
+    detect: /(?:export\s+(?:default\s+)?)?(?:function|const)\s+[A-Z]\w+\s*(?::\s*React\.FC|\([^)]*\))\s*(?:=>|{)/,
     extractExample: (code: string) => {
-      const match = code.match(/(?:interface|type)\s+\w*Props[\s\S]*?}[\s\S]*?(?:function|const)\s+\w+[\s\S]*?(?:return\s*\([\s\S]*?\);|\))/);
+      const match = code.match(/(?:export\s+(?:default\s+)?)?(?:function|const)\s+[A-Z]\w+\s*\([^)]*\)\s*(?::\s*\w+)?\s*(?:=>|{)[\s\S]{20,300}?return\s*\([\s\S]{10,200}?\)/);
       return match ? match[0] : null;
     },
     rules: [
@@ -51,23 +57,25 @@ const PATTERN_DETECTORS: Array<{
   },
   {
     category: 'validation',
-    name: 'Input Validation Pattern',
-    detect: /if\s*\(\s*!?\w+\s*(?:===?|!==?)\s*(?:null|undefined|''|""|0)\s*\)/,
+    name: 'Schema Validation (Zod/Pydantic)',
+    detect: /z\.(?:object|string|number)|class\s+\w+\(BaseModel\)|@validator|@field_validator/,
     extractExample: (code: string) => {
-      const match = code.match(/if\s*\([^)]*(?:null|undefined)[^)]*\)\s*\{[^}]*\}/);
-      return match ? match[0] : null;
+      const zodMatch = code.match(/(?:const|export const)\s+\w+Schema\s*=\s*z\.object\(\s*\{[\s\S]{20,400}?\}\s*\)/);
+      if (zodMatch) return zodMatch[0];
+      const pydanticMatch = code.match(/class\s+\w+\(BaseModel\):\s*[\s\S]{20,300}?(?=\n\n|\nclass|\n[a-z])/);
+      return pydanticMatch ? pydanticMatch[0] : null;
     },
     rules: [
-      { rule: 'Validate inputs before use', severity: 'warning' },
-      { rule: 'Use optional chaining for nested access', severity: 'info' }
+      { rule: 'Define schemas for API inputs', severity: 'critical' },
+      { rule: 'Use strict validation', severity: 'warning' }
     ]
   },
   {
     category: 'data_fetching',
     name: 'Async/Await Pattern',
-    detect: /async\s+(?:function|\([^)]*\)\s*=>)/,
+    detect: /async\s+(?:function\s+\w+|\w+\s*=\s*async|\([^)]*\)\s*=>)/,
     extractExample: (code: string) => {
-      const match = code.match(/async\s+(?:function\s+\w+)?\s*\([^)]*\)\s*(?::\s*Promise<[^>]+>)?\s*\{[\s\S]*?await[\s\S]*?\}/);
+      const match = code.match(/async\s+(?:function\s+\w+)?\s*\([^)]*\)\s*(?::\s*Promise<[^>]+>)?\s*\{[\s\S]{20,250}?await[\s\S]{10,100}?\}/);
       return match ? match[0] : null;
     },
     rules: [
@@ -76,16 +84,68 @@ const PATTERN_DETECTORS: Array<{
     ]
   },
   {
-    category: 'logging',
-    name: 'Logging Pattern',
-    detect: /console\.(log|error|warn|info)|logger\./,
+    category: 'api_call',
+    name: 'FastAPI Endpoint Pattern',
+    detect: /@(?:app|router)\.(?:get|post|put|delete|patch)\s*\(/,
     extractExample: (code: string) => {
-      const match = code.match(/(?:console|logger)\.\w+\s*\([^)]*\)/);
+      const match = code.match(/@(?:app|router)\.(?:get|post|put|delete|patch)\s*\([^)]+\)\s*\n(?:async\s+)?def\s+\w+\s*\([^)]*\)[\s\S]{10,250}?(?=\n@|\n\ndef|\nclass|$)/);
       return match ? match[0] : null;
     },
     rules: [
-      { rule: 'Use structured logging', severity: 'info' },
-      { rule: 'Include context in log messages', severity: 'info' }
+      { rule: 'Use response_model for type safety', severity: 'warning' },
+      { rule: 'Add proper status codes', severity: 'info' }
+    ]
+  },
+  {
+    category: 'state_management',
+    name: 'React Hook Pattern',
+    detect: /use(?:State|Effect|Memo|Callback|Ref|Context)\s*\(/,
+    extractExample: (code: string) => {
+      const match = code.match(/const\s+\[\s*\w+,\s*set\w+\s*\]\s*=\s*useState[\s\S]{0,80}?(?:;|\))/);
+      return match ? match[0] : null;
+    },
+    rules: [
+      { rule: 'Follow hooks rules', severity: 'critical' },
+      { rule: 'Use useMemo for expensive computations', severity: 'info' }
+    ]
+  },
+  {
+    category: 'testing',
+    name: 'Test Pattern',
+    detect: /(?:describe|it|test)\s*\(\s*['"`]/,
+    extractExample: (code: string) => {
+      const match = code.match(/(?:it|test)\s*\(\s*['"`][^'"`]+['"`]\s*,\s*(?:async\s*)?\(\s*\)\s*=>\s*\{[\s\S]{20,200}?\}\s*\)/);
+      return match ? match[0] : null;
+    },
+    rules: [
+      { rule: 'Test one thing per test', severity: 'warning' },
+      { rule: 'Use descriptive test names', severity: 'info' }
+    ]
+  },
+  {
+    category: 'database',
+    name: 'SQL/ORM Query Pattern',
+    detect: /\.execute\(|\.query\(|select\(|\.filter\(|\.where\(/,
+    extractExample: (code: string) => {
+      const match = code.match(/(?:await\s+)?(?:db|session|connection)\.(?:execute|query)\s*\([\s\S]{10,200}?\)/);
+      return match ? match[0] : null;
+    },
+    rules: [
+      { rule: 'Use parameterized queries', severity: 'critical' },
+      { rule: 'Handle query errors', severity: 'warning' }
+    ]
+  },
+  {
+    category: 'authentication',
+    name: 'Auth Check Pattern',
+    detect: /(?:is_?authenticated|current_?user|get_?current_?user|useAuth|authRequired|@requires_auth)/i,
+    extractExample: (code: string) => {
+      const match = code.match(/(?:if\s*\(\s*!?\s*(?:is_?authenticated|current_?user)|Depends\s*\(\s*get_?current_?user)[\s\S]{10,150}?(?:\{|\))/i);
+      return match ? match[0] : null;
+    },
+    rules: [
+      { rule: 'Always verify authentication', severity: 'critical' },
+      { rule: 'Check authorization after authentication', severity: 'critical' }
     ]
   }
 ];
@@ -111,9 +171,18 @@ export class PatternLearner {
     let examplesAdded = 0;
 
     for (const file of files) {
-      if (!file.preview) continue;
+      // Skip non-code files
+      const ext = this.getExtension(file.path);
+      if (!CODE_EXTENSIONS.includes(ext)) continue;
 
-      const filePatterns = this.detectPatterns(file.preview);
+      // Skip large files
+      if (file.sizeBytes > MAX_FILE_SIZE) continue;
+
+      // Read actual file content (not just preview)
+      const content = this.readFileContent(file.path);
+      if (!content) continue;
+
+      const filePatterns = this.detectPatterns(content);
 
       for (const detected of filePatterns) {
         categories[detected.category] = (categories[detected.category] || 0) + 1;
@@ -123,8 +192,10 @@ export class PatternLearner {
         const existing = existingPatterns.find(p => p.name === detected.name);
 
         if (existing) {
-          // Add as example if different enough
-          if (detected.example && !this.isDuplicate(existing.examples, detected.example)) {
+          // Add as example if different enough (limit examples per pattern)
+          if (detected.example &&
+              existing.examples.length < 5 &&
+              !this.isDuplicate(existing.examples, detected.example)) {
             this.patternLibrary.addExample(existing.id, {
               code: detected.example,
               explanation: `Extracted from ${file.path}`,
@@ -152,6 +223,22 @@ export class PatternLearner {
     }
 
     return { patternsLearned, examplesAdded, categories };
+  }
+
+  // Read file content safely
+  private readFileContent(filePath: string): string | null {
+    try {
+      if (!existsSync(filePath)) return null;
+      return readFileSync(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
+  }
+
+  // Get file extension
+  private getExtension(filePath: string): string {
+    const match = filePath.match(/\.[^.]+$/);
+    return match ? match[0].toLowerCase() : '';
   }
 
   // Detect patterns in a code snippet

@@ -60,7 +60,8 @@ export class Tier2Storage {
   getFile(path: string): FileMetadata | null {
     const stmt = this.db.prepare(`
       SELECT id, path, content_hash as contentHash, preview, language,
-             size_bytes as sizeBytes, last_modified as lastModified, indexed_at as indexedAt
+             size_bytes as sizeBytes, line_count as lineCount,
+             last_modified as lastModified, indexed_at as indexedAt
       FROM files WHERE path = ?
     `);
     return stmt.get(path) as FileMetadata | null;
@@ -69,7 +70,8 @@ export class Tier2Storage {
   getFileById(id: number): FileMetadata | null {
     const stmt = this.db.prepare(`
       SELECT id, path, content_hash as contentHash, preview, language,
-             size_bytes as sizeBytes, last_modified as lastModified, indexed_at as indexedAt
+             size_bytes as sizeBytes, line_count as lineCount,
+             last_modified as lastModified, indexed_at as indexedAt
       FROM files WHERE id = ?
     `);
     return stmt.get(id) as FileMetadata | null;
@@ -83,7 +85,8 @@ export class Tier2Storage {
   getAllFiles(): FileMetadata[] {
     const stmt = this.db.prepare(`
       SELECT id, path, content_hash as contentHash, preview, language,
-             size_bytes as sizeBytes, last_modified as lastModified, indexed_at as indexedAt
+             size_bytes as sizeBytes, line_count as lineCount,
+             last_modified as lastModified, indexed_at as indexedAt
       FROM files
       WHERE path NOT LIKE '%node_modules%'
         AND path NOT LIKE '%.git%'
@@ -167,36 +170,77 @@ export class Tier2Storage {
   // Search using cosine similarity (computed in JS since sqlite-vec may not be available)
   search(queryEmbedding: Float32Array, limit: number = 10): SearchResult[] {
     const allEmbeddings = this.getAllEmbeddings();
-    const results: Array<{ fileId: number; similarity: number }> = [];
+    const results: Array<{ fileId: number; similarity: number; adjustedSimilarity: number }> = [];
 
     for (const { fileId, embedding } of allEmbeddings) {
       const similarity = this.cosineSimilarity(queryEmbedding, embedding);
-      results.push({ fileId, similarity });
+
+      // Get file metadata for quality adjustment
+      const file = this.getFileById(fileId);
+      if (!file || this.shouldExcludePath(file.path)) continue;
+
+      // Apply content quality multiplier to penalize empty/short files
+      const qualityMultiplier = this.getContentQualityMultiplier(file);
+      const adjustedSimilarity = similarity * qualityMultiplier;
+
+      results.push({ fileId, similarity, adjustedSimilarity });
     }
 
-    // Sort by similarity descending
-    results.sort((a, b) => b.similarity - a.similarity);
+    // Sort by ADJUSTED similarity descending (quality-aware ranking)
+    results.sort((a, b) => b.adjustedSimilarity - a.adjustedSimilarity);
 
-    // Get top results with file metadata, filtering out excluded paths
+    // Get top results with file metadata
     const searchResults: SearchResult[] = [];
 
-    for (const { fileId, similarity } of results) {
+    for (const { fileId, adjustedSimilarity } of results) {
       if (searchResults.length >= limit) break;
 
       const file = this.getFileById(fileId);
-      if (file && !this.shouldExcludePath(file.path)) {
+      if (file) {
         searchResults.push({
           file: file.path,
           preview: file.preview,
-          similarity,
+          similarity: adjustedSimilarity, // Return adjusted similarity
           lineStart: 1,
-          lineEnd: 50, // Default, could be improved
+          lineEnd: Math.min(50, file.lineCount || 50),
           lastModified: file.lastModified
         });
       }
     }
 
     return searchResults;
+  }
+
+  /**
+   * Calculate content quality multiplier to penalize empty/short files
+   * Returns a value between 0.1 and 1.0
+   */
+  private getContentQualityMultiplier(file: FileMetadata): number {
+    const lineCount = file.lineCount || 0;
+    const fileName = file.path.toLowerCase();
+
+    // Heavily penalize __init__.py and similar marker files
+    if (fileName.endsWith('__init__.py') && lineCount < 10) {
+      return 0.1; // 90% penalty for near-empty __init__.py
+    }
+
+    // Penalize very short files (< 5 lines)
+    if (lineCount < 5) {
+      return 0.2; // 80% penalty
+    }
+
+    // Slight penalty for short files (< 20 lines)
+    if (lineCount < 20) {
+      return 0.5 + (lineCount / 40); // 50-100% based on line count
+    }
+
+    // Bonus for substantial files (> 50 lines) - cap at 1.0
+    if (lineCount > 50) {
+      return 1.0;
+    }
+
+    // Normal files (20-50 lines)
+    return 0.8 + (lineCount / 250); // ~80-100%
   }
 
   private cosineSimilarity(a: Float32Array, b: Float32Array): number {

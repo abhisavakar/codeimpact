@@ -44,6 +44,41 @@ const MAX_RECENT_CONTEXTS = 5;
 const TTL_MINUTES = 30;
 const HOT_CACHE_MAX_FILES = 15;
 
+// Files to ignore in suggestions and tracking (stubs, configs, generated files)
+const IGNORE_FILE_PATTERNS = [
+  /__init__\.py$/,           // Python package stubs
+  /\.d\.ts$/,                // TypeScript declaration files
+  /\.config\.(js|ts|mjs)$/,  // Config files
+  /\.env/,                   // Environment files
+  /package-lock\.json$/,
+  /yarn\.lock$/,
+  /pnpm-lock\.yaml$/,
+  /next-env\.d\.ts$/,        // Next.js generated
+];
+
+// Check if a file is a meaningful code file (not a stub/config)
+function isMeaningfulFile(filePath: string, lineCount?: number): boolean {
+  const fileName = basename(filePath).toLowerCase();
+
+  // Check ignore patterns
+  for (const pattern of IGNORE_FILE_PATTERNS) {
+    if (pattern.test(fileName) || pattern.test(filePath)) {
+      return false;
+    }
+  }
+
+  // Check if __init__.py with few lines (stub)
+  if (fileName === '__init__.py' && (lineCount === undefined || lineCount < 10)) {
+    return false;
+  }
+
+  // Check file extension - only code files
+  const codeExtensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.vue', '.svelte'];
+  const hasCodeExtension = codeExtensions.some(ext => filePath.endsWith(ext));
+
+  return hasCodeExtension;
+}
+
 export class FeatureContextManager extends EventEmitter {
   private current: ActiveFeatureContext | null = null;
   private recent: ActiveFeatureContext[] = [];
@@ -494,8 +529,9 @@ export class FeatureContextManager extends EventEmitter {
       };
     }
 
-    // Extract information from context
+    // Extract information from context - filter out stub files
     const activeFiles = contextToResurrect.files
+      .filter(f => isMeaningfulFile(f.path))
       .sort((a, b) => b.touchCount - a.touchCount)
       .slice(0, maxFiles)
       .map(f => f.path);
@@ -597,8 +633,9 @@ export class FeatureContextManager extends EventEmitter {
       suggestions.push(`Resume investigating: "${blocker.slice(0, 50)}..."`);
     }
 
-    // Suggest continuing with most-touched files
+    // Suggest continuing with most-touched meaningful files (not stubs)
     const topFiles = context.files
+      .filter(f => isMeaningfulFile(f.path))
       .sort((a, b) => b.touchCount - a.touchCount)
       .slice(0, 2);
 
@@ -660,9 +697,10 @@ export class FeatureContextManager extends EventEmitter {
     // Status
     parts.push(`Status: ${context.status}`);
 
-    // Files worked on
-    if (context.files.length > 0) {
-      const topFiles = context.files
+    // Files worked on - only meaningful code files
+    const meaningfulFiles = context.files.filter(f => isMeaningfulFile(f.path));
+    if (meaningfulFiles.length > 0) {
+      const topFiles = meaningfulFiles
         .sort((a, b) => b.touchCount - a.touchCount)
         .slice(0, 3)
         .map(f => basename(f.path));
