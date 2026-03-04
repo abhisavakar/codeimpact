@@ -22,6 +22,10 @@ import { TestAwareness } from './test-awareness/index.js';
 import { GhostMode, type GhostInsight, type ConflictWarning } from './ghost-mode.js';
 import { DejaVuDetector, type DejaVuMatch } from './deja-vu.js';
 import { CodeVerifier, type VerificationResult, type VerificationCheck, type ImportVerification, type SecurityScanResult, type DependencyCheckResult } from './code-verifier.js';
+import { DeadCodeDetector, type DeadCodeReport, type UnusedExport, type UnusedFile } from './dead-code-detector.js';
+import { TestImpactAnalyzer, type TestImpactResult, type AffectedFile } from './test-impact-analyzer.js';
+import { BlastRadiusAnalyzer, type BlastRadiusResult, type RiskLevel } from './blast-radius.js';
+import { CostTracker, type UsageStats, type StatsPeriod } from './cost-tracker.js';
 import { GitStalenessChecker, ActivityGate } from './refresh/index.js';
 import { detectLanguage, getPreview, countLines } from '../utils/files.js';
 import type { CodeImpactConfig, AssembledContext, Decision, ProjectSummary, SearchResult, CodeSymbol, SymbolKind, ActiveFeatureContext, HotContext } from '../types/index.js';
@@ -29,7 +33,7 @@ import type { ArchitectureDoc, ComponentDoc, DailyChangelog, ChangelogOptions, V
 import type Database from 'better-sqlite3';
 
 // Re-export types for external use
-export type { GhostInsight, ConflictWarning, DejaVuMatch, ResurrectedContext, VerificationResult, VerificationCheck, ImportVerification, SecurityScanResult, DependencyCheckResult };
+export type { GhostInsight, ConflictWarning, DejaVuMatch, ResurrectedContext, VerificationResult, VerificationCheck, ImportVerification, SecurityScanResult, DependencyCheckResult, DeadCodeReport, UnusedExport, UnusedFile, TestImpactResult, AffectedFile, BlastRadiusResult, RiskLevel, UsageStats, StatsPeriod };
 
 export class CodeImpactEngine {
   private config: CodeImpactConfig;
@@ -1649,6 +1653,173 @@ export class CodeImpactEngine {
    */
   checkCodeDependencies(code: string): DependencyCheckResult {
     return this.codeVerifier.checkDependencies(code);
+  }
+
+  // ==================== Dead Code Detection ====================
+
+  /**
+   * Find dead code in the project: unused exports and files with no dependents.
+   * Returns a comprehensive report with confidence scores.
+   */
+  findDeadCode(): DeadCodeReport {
+    const detector = new DeadCodeDetector(this.tier2);
+    return detector.analyze();
+  }
+
+  /**
+   * Find unused exports only.
+   */
+  findUnusedExports(): UnusedExport[] {
+    const detector = new DeadCodeDetector(this.tier2);
+    return detector.findUnusedExports();
+  }
+
+  /**
+   * Find files with no dependents.
+   */
+  findUnusedFiles(): UnusedFile[] {
+    const detector = new DeadCodeDetector(this.tier2);
+    return detector.findUnusedFiles();
+  }
+
+  /**
+   * Format dead code report for CLI output.
+   */
+  formatDeadCodeReport(report: DeadCodeReport): string {
+    const detector = new DeadCodeDetector(this.tier2);
+    return detector.formatReport(report);
+  }
+
+  /**
+   * Format dead code report as JSON.
+   */
+  formatDeadCodeReportJSON(report: DeadCodeReport): string {
+    const detector = new DeadCodeDetector(this.tier2);
+    return detector.formatReportJSON(report);
+  }
+
+  // ==================== Test Impact Analysis ====================
+
+  /**
+   * Analyze which tests need to run based on changed files.
+   * Returns affected files, tests to run, and estimated time savings.
+   */
+  analyzeTestImpact(changedFiles: string[]): TestImpactResult {
+    const analyzer = new TestImpactAnalyzer(this.tier2, this.testAwareness, this.config.projectPath);
+    return analyzer.analyzeImpact(changedFiles);
+  }
+
+  /**
+   * Analyze test impact using git to detect changed files.
+   * Uses staged + unstaged changes by default.
+   */
+  analyzeTestImpactFromGit(): TestImpactResult {
+    const analyzer = new TestImpactAnalyzer(this.tier2, this.testAwareness, this.config.projectPath);
+    const changedFiles = analyzer.getChangedFilesFromGit();
+    return analyzer.analyzeImpact(changedFiles);
+  }
+
+  /**
+   * Analyze test impact compared to a specific branch.
+   */
+  analyzeTestImpactFromBranch(baseBranch: string = 'main'): TestImpactResult {
+    const analyzer = new TestImpactAnalyzer(this.tier2, this.testAwareness, this.config.projectPath);
+    const changedFiles = analyzer.getChangedFilesFromBranch(baseBranch);
+    return analyzer.analyzeImpact(changedFiles);
+  }
+
+  /**
+   * Get changed files from git (staged + unstaged).
+   */
+  getChangedFilesFromGit(): string[] {
+    const analyzer = new TestImpactAnalyzer(this.tier2, this.testAwareness, this.config.projectPath);
+    return analyzer.getChangedFilesFromGit();
+  }
+
+  /**
+   * Format test impact result for CLI output.
+   */
+  formatTestImpactReport(result: TestImpactResult): string {
+    const analyzer = new TestImpactAnalyzer(this.tier2, this.testAwareness, this.config.projectPath);
+    return analyzer.formatReport(result);
+  }
+
+  /**
+   * Format test impact result as JSON.
+   */
+  formatTestImpactReportJSON(result: TestImpactResult): string {
+    const analyzer = new TestImpactAnalyzer(this.tier2, this.testAwareness, this.config.projectPath);
+    return analyzer.formatReportJSON(result);
+  }
+
+  // ==================== Blast Radius Analysis ====================
+
+  /**
+   * Analyze the blast radius of changing a file.
+   * Returns risk score, affected files, critical paths, and recommendations.
+   */
+  getBlastRadius(filePath: string, maxDepth: number = 3): BlastRadiusResult {
+    const analyzer = new BlastRadiusAnalyzer(this.tier2, this.testAwareness);
+    return analyzer.analyze(filePath, maxDepth);
+  }
+
+  /**
+   * Get blast radius for multiple files.
+   */
+  getBlastRadiusMultiple(filePaths: string[], maxDepth: number = 3): BlastRadiusResult[] {
+    const analyzer = new BlastRadiusAnalyzer(this.tier2, this.testAwareness);
+    return filePaths.map(filePath => analyzer.analyze(filePath, maxDepth));
+  }
+
+  /**
+   * Format blast radius result for CLI output.
+   */
+  formatBlastRadiusReport(result: BlastRadiusResult): string {
+    const analyzer = new BlastRadiusAnalyzer(this.tier2, this.testAwareness);
+    return analyzer.formatReport(result);
+  }
+
+  /**
+   * Format blast radius result as JSON.
+   */
+  formatBlastRadiusReportJSON(result: BlastRadiusResult): string {
+    const analyzer = new BlastRadiusAnalyzer(this.tier2, this.testAwareness);
+    return analyzer.formatReportJSON(result);
+  }
+
+  // ==================== Cost/Token Tracking ====================
+
+  /**
+   * Record token usage for a query.
+   * Call this after each query to track usage and calculate savings.
+   */
+  recordTokenUsage(queryType: string, tokensUsed: number, tokensSaved?: number): void {
+    const tracker = new CostTracker(this.tier2);
+    tracker.recordUsage(queryType, tokensUsed, tokensSaved);
+  }
+
+  /**
+   * Get usage statistics for a time period.
+   */
+  getUsageStats(period: StatsPeriod = 'month'): UsageStats {
+    const tracker = new CostTracker(this.tier2);
+    return tracker.getStats(period);
+  }
+
+  /**
+   * Format usage stats for CLI output.
+   */
+  formatUsageReport(stats: UsageStats): string {
+    const tracker = new CostTracker(this.tier2);
+    return tracker.formatReport(stats);
+  }
+
+  /**
+   * Format usage stats as JSON.
+   */
+  formatUsageReportJSON(stats: UsageStats): string {
+    const tracker = new CostTracker(this.tier2);
+    return tracker.formatReportJSON(stats);
   }
 
   shutdown(): void {

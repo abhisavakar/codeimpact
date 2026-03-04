@@ -837,6 +837,136 @@ export class Tier2Storage {
     }));
   }
 
+  /**
+   * Get ALL exports across all files in the project.
+   * Used by dead code detection to find unused exports.
+   */
+  getAllExports(): Export[] {
+    const stmt = this.db.prepare(`
+      SELECT e.file_id as fileId, f.path as filePath, e.exported_name as exportedName,
+             e.local_name as localName, e.is_default as isDefault, e.line_number as lineNumber
+      FROM exports e
+      JOIN files f ON e.file_id = f.id
+      WHERE f.path NOT LIKE '%node_modules%'
+        AND f.path NOT LIKE '%.git%'
+        AND f.path NOT LIKE '%/dist/%'
+        AND f.path NOT LIKE '%/build/%'
+      ORDER BY f.path, e.line_number
+    `);
+    const rows = stmt.all() as Array<{
+      fileId: number;
+      filePath: string;
+      exportedName: string;
+      localName: string | null;
+      isDefault: number;
+      lineNumber: number;
+    }>;
+
+    return rows.map(r => ({
+      fileId: r.fileId,
+      filePath: r.filePath,
+      exportedName: r.exportedName,
+      localName: r.localName || undefined,
+      isDefault: r.isDefault === 1,
+      lineNumber: r.lineNumber
+    }));
+  }
+
+  /**
+   * Get ALL imports across all files in the project.
+   * Used by dead code detection to find which exports are actually used.
+   */
+  getAllImports(): Import[] {
+    const stmt = this.db.prepare(`
+      SELECT i.file_id as fileId, f.path as filePath, i.imported_from as importedFrom,
+             i.imported_symbols as importedSymbols, i.is_default as isDefault,
+             i.is_namespace as isNamespace, i.line_number as lineNumber
+      FROM imports i
+      JOIN files f ON i.file_id = f.id
+      WHERE f.path NOT LIKE '%node_modules%'
+        AND f.path NOT LIKE '%.git%'
+        AND f.path NOT LIKE '%/dist/%'
+        AND f.path NOT LIKE '%/build/%'
+      ORDER BY f.path, i.line_number
+    `);
+    const rows = stmt.all() as Array<{
+      fileId: number;
+      filePath: string;
+      importedFrom: string;
+      importedSymbols: string;
+      isDefault: number;
+      isNamespace: number;
+      lineNumber: number;
+    }>;
+
+    return rows.map(r => ({
+      fileId: r.fileId,
+      filePath: r.filePath,
+      importedFrom: r.importedFrom,
+      importedSymbols: JSON.parse(r.importedSymbols),
+      isDefault: r.isDefault === 1,
+      isNamespace: r.isNamespace === 1,
+      lineNumber: r.lineNumber
+    }));
+  }
+
+  /**
+   * Check if a file is an entry point (should not be flagged as dead code).
+   * Entry points: index files, main files, app files, config files, test files.
+   */
+  isEntryPoint(filePath: string): boolean {
+    const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
+    const fileName = normalizedPath.split('/').pop() || '';
+    const baseName = fileName.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/, '');
+
+    // Common entry point patterns
+    const entryPointNames = [
+      'index',
+      'main',
+      'app',
+      'server',
+      'cli',
+      'bin',
+      'entry',
+      'bootstrap',
+    ];
+
+    // Config file patterns
+    const configPatterns = [
+      'config',
+      'settings',
+      '.config',
+      'rc',
+    ];
+
+    // Check if it's a common entry point name
+    if (entryPointNames.includes(baseName)) {
+      return true;
+    }
+
+    // Check if it's a config file
+    if (configPatterns.some(p => baseName.includes(p))) {
+      return true;
+    }
+
+    // Check if it's in a bin/ or scripts/ directory
+    if (normalizedPath.includes('/bin/') || normalizedPath.includes('/scripts/')) {
+      return true;
+    }
+
+    // Check if it's a test file (tests are entry points for test runners)
+    if (normalizedPath.includes('.test.') || normalizedPath.includes('.spec.') ||
+        normalizedPath.includes('__tests__/') || normalizedPath.includes('/test/') ||
+        normalizedPath.includes('/tests/')) {
+      return true;
+    }
+
+    // Check for package.json "main" or "exports" - would need to read package.json
+    // For now, we rely on common patterns
+
+    return false;
+  }
+
   // Phase 2: Dependency graph helpers
 
   getFileDependencies(filePath: string): Array<{ file: string; imports: string[] }> {
@@ -1074,5 +1204,159 @@ export class Tier2Storage {
     ) as { id: number; path: string } | undefined;
 
     return result || null;
+  }
+
+  // ==================== Token Usage Tracking ====================
+
+  /**
+   * Record a token usage event.
+   */
+  recordTokenUsage(
+    queryType: string,
+    tokensUsed: number,
+    tokensSaved: number = 0,
+    costDollars: number = 0
+  ): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO token_usage (query_type, tokens_used, tokens_saved, cost_dollars)
+      VALUES (?, ?, ?, ?)
+    `);
+    stmt.run(queryType, tokensUsed, tokensSaved, costDollars);
+  }
+
+  /**
+   * Get token usage stats since a specific timestamp.
+   */
+  getTokenUsageStats(sinceTimestamp: number): {
+    totalQueries: number;
+    totalTokensUsed: number;
+    totalTokensSaved: number;
+    totalCostDollars: number;
+    byQueryType: Array<{
+      queryType: string;
+      queries: number;
+      tokensUsed: number;
+      tokensSaved: number;
+      costDollars: number;
+    }>;
+  } {
+    // Get totals
+    const totalsStmt = this.db.prepare(`
+      SELECT
+        COUNT(*) as totalQueries,
+        COALESCE(SUM(tokens_used), 0) as totalTokensUsed,
+        COALESCE(SUM(tokens_saved), 0) as totalTokensSaved,
+        COALESCE(SUM(cost_dollars), 0) as totalCostDollars
+      FROM token_usage
+      WHERE timestamp >= ?
+    `);
+    const totals = totalsStmt.get(sinceTimestamp) as {
+      totalQueries: number;
+      totalTokensUsed: number;
+      totalTokensSaved: number;
+      totalCostDollars: number;
+    };
+
+    // Get breakdown by query type
+    const byTypeStmt = this.db.prepare(`
+      SELECT
+        query_type as queryType,
+        COUNT(*) as queries,
+        COALESCE(SUM(tokens_used), 0) as tokensUsed,
+        COALESCE(SUM(tokens_saved), 0) as tokensSaved,
+        COALESCE(SUM(cost_dollars), 0) as costDollars
+      FROM token_usage
+      WHERE timestamp >= ?
+      GROUP BY query_type
+      ORDER BY tokensUsed DESC
+    `);
+    const byQueryType = byTypeStmt.all(sinceTimestamp) as Array<{
+      queryType: string;
+      queries: number;
+      tokensUsed: number;
+      tokensSaved: number;
+      costDollars: number;
+    }>;
+
+    return {
+      totalQueries: totals.totalQueries,
+      totalTokensUsed: totals.totalTokensUsed,
+      totalTokensSaved: totals.totalTokensSaved,
+      totalCostDollars: totals.totalCostDollars,
+      byQueryType,
+    };
+  }
+
+  /**
+   * Get overall token usage summary (all time).
+   */
+  getTokenUsageSummary(): {
+    totalQueries: number;
+    totalTokensUsed: number;
+    totalTokensSaved: number;
+    totalCostDollars: number;
+    estimatedCostWithoutCodeImpact: number;
+    firstUsage: number | null;
+    lastUsage: number | null;
+  } {
+    const stmt = this.db.prepare(`
+      SELECT
+        COUNT(*) as totalQueries,
+        COALESCE(SUM(tokens_used), 0) as totalTokensUsed,
+        COALESCE(SUM(tokens_saved), 0) as totalTokensSaved,
+        COALESCE(SUM(cost_dollars), 0) as totalCostDollars,
+        MIN(timestamp) as firstUsage,
+        MAX(timestamp) as lastUsage
+      FROM token_usage
+    `);
+    const result = stmt.get() as {
+      totalQueries: number;
+      totalTokensUsed: number;
+      totalTokensSaved: number;
+      totalCostDollars: number;
+      firstUsage: number | null;
+      lastUsage: number | null;
+    };
+
+    // Estimate what it would have cost without CodeImpact's focused context
+    // Assume without CodeImpact, queries would use 3-5x more tokens
+    const estimatedCostWithoutCodeImpact = result.totalCostDollars +
+      (result.totalTokensSaved * 0.00006); // Approximate Claude cost per token
+
+    return {
+      ...result,
+      estimatedCostWithoutCodeImpact,
+    };
+  }
+
+  /**
+   * Get daily token usage for the last N days.
+   */
+  getDailyTokenUsage(days: number = 30): Array<{
+    date: string;
+    queries: number;
+    tokensUsed: number;
+    tokensSaved: number;
+    costDollars: number;
+  }> {
+    const stmt = this.db.prepare(`
+      SELECT
+        date(timestamp, 'unixepoch') as date,
+        COUNT(*) as queries,
+        COALESCE(SUM(tokens_used), 0) as tokensUsed,
+        COALESCE(SUM(tokens_saved), 0) as tokensSaved,
+        COALESCE(SUM(cost_dollars), 0) as costDollars
+      FROM token_usage
+      WHERE timestamp >= unixepoch('now', ?)
+      GROUP BY date(timestamp, 'unixepoch')
+      ORDER BY date DESC
+    `);
+    return stmt.all(`-${days} days`) as Array<{
+      date: string;
+      queries: number;
+      tokensUsed: number;
+      tokensSaved: number;
+      costDollars: number;
+    }>;
   }
 }

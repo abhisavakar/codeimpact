@@ -943,6 +943,25 @@ export const toolDefinitions: ToolDefinition[] = [
       type: 'object',
       properties: {}
     }
+  },
+  // Blast Radius Analysis tool
+  {
+    name: 'memory_blast_radius',
+    description: 'Analyze the blast radius of changing a file. Returns risk score (0-100), affected files, critical paths (auth, payment, security), and recommendations. Use before making changes to understand impact.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          description: 'Path to the file to analyze'
+        },
+        max_depth: {
+          type: 'number',
+          description: 'Maximum dependency depth to analyze (1-10, default: 3)'
+        }
+      },
+      required: ['file']
+    }
   }
 ];
 
@@ -2451,6 +2470,36 @@ export async function handleToolCall(
         message: status.isIdle
           ? `System idle for ${Math.round(status.idleDuration / 1000)}s, ${status.idleTasks.filter(t => t.readyToRun).length} task(s) ready`
           : 'System active'
+      };
+    }
+
+    case 'memory_blast_radius': {
+      const file = args.file as string;
+      const maxDepth = (args.max_depth as number) || 3;
+
+      const result = engine.getBlastRadius(file, maxDepth);
+
+      return {
+        file: result.file,
+        risk_score: result.riskScore,
+        risk_level: result.riskLevel,
+        in_critical_path: result.inCriticalPath,
+        direct_dependents: result.directDependents,
+        transitive_dependents: result.transitiveDependents,
+        total_affected: result.totalAffected,
+        critical_paths: result.criticalPaths,
+        test_coverage: {
+          covered: result.testCoverage.covered,
+          total: result.testCoverage.total,
+          percent: result.testCoverage.percent
+        },
+        affected_files: result.affectedFiles.slice(0, 20).map(f => ({
+          file: f.file,
+          depth: f.depth,
+          imports: f.imports
+        })),
+        recommendation: result.recommendation,
+        message: `Risk: ${result.riskScore}/100 (${result.riskLevel.toUpperCase()}). ${result.totalAffected} files affected. ${result.recommendation}`
       };
     }
 

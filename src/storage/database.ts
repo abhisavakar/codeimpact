@@ -261,6 +261,19 @@ export function initializeDatabase(dbPath: string): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_refresh_state_key ON refresh_state(key);
+
+    -- Token Usage Tracking for Cost Dashboard
+    CREATE TABLE IF NOT EXISTS token_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp INTEGER DEFAULT (unixepoch()),
+      query_type TEXT NOT NULL,
+      tokens_used INTEGER NOT NULL,
+      tokens_saved INTEGER NOT NULL DEFAULT 0,
+      cost_dollars REAL NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_token_usage_timestamp ON token_usage(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_token_usage_query_type ON token_usage(query_type);
   `);
 
   return db;

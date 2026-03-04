@@ -1,5 +1,10 @@
 import { ProjectManager, type ProjectInfo } from '../core/project-manager.js';
 import { ADRExporter } from '../core/adr-exporter.js';
+import { DeadCodeDetector, type DeadCodeReport } from '../core/dead-code-detector.js';
+import { TestImpactAnalyzer, type TestImpactResult } from '../core/test-impact-analyzer.js';
+import { BlastRadiusAnalyzer, type BlastRadiusResult } from '../core/blast-radius.js';
+import { CostTracker, type UsageStats, type StatsPeriod } from '../core/cost-tracker.js';
+import { TestAwareness } from '../core/test-awareness/index.js';
 import { initializeDatabase } from '../storage/database.js';
 import { Tier2Storage } from '../storage/tier2.js';
 import { join, resolve } from 'path';
@@ -198,6 +203,309 @@ export function exportDecisions(
     success: true,
     message: `Exported ${exportedFiles.length} ADR files to ${options.outputDir || join(targetPath, 'docs', 'decisions')}`,
     data: exportedFiles
+  };
+}
+
+// Helper to find database path (checks both centralized and project-local locations)
+function findDatabasePath(projectInfo: ProjectInfo): string | null {
+  // First try centralized location
+  const centralizedPath = join(projectInfo.dataDir, 'codeimpact.db');
+  if (existsSync(centralizedPath)) {
+    return centralizedPath;
+  }
+
+  // Then try project-local .codeimpact directory
+  const projectLocalPath = join(projectInfo.path, '.codeimpact', 'codeimpact.db');
+  if (existsSync(projectLocalPath)) {
+    return projectLocalPath;
+  }
+
+  return null;
+}
+
+// Run dead code analysis
+export function runDeadCodeAnalysis(
+  projectPath?: string,
+  options: { json?: boolean; threshold?: number } = {}
+): CommandResult {
+  // Determine project path
+  let targetPath = projectPath;
+  if (!targetPath) {
+    const activeProject = projectManager.getActiveProject();
+    if (!activeProject) {
+      return {
+        success: false,
+        message: 'No project specified and no active project. Use "codeimpact projects switch <id>" first.'
+      };
+    }
+    targetPath = activeProject.path;
+  }
+
+  // Get project info
+  const projectInfo = projectManager.getProjectByPath(targetPath);
+  if (!projectInfo) {
+    return {
+      success: false,
+      message: `Project not registered: ${targetPath}. Use "codeimpact projects add ${targetPath}" first.`
+    };
+  }
+
+  // Open database
+  const dbPath = findDatabasePath(projectInfo);
+  if (!dbPath) {
+    return {
+      success: false,
+      message: `Project database not found. Run "codeimpact init ${targetPath}" first to index the project.`
+    };
+  }
+
+  const db = initializeDatabase(dbPath);
+  const tier2 = new Tier2Storage(db);
+
+  // Run dead code analysis
+  const detector = new DeadCodeDetector(tier2);
+  const report = detector.analyze();
+  db.close();
+
+  // Apply threshold filter if specified
+  let filteredReport = report;
+  if (options.threshold !== undefined) {
+    filteredReport = {
+      ...report,
+      unusedExports: report.unusedExports.filter(e => e.confidence >= options.threshold!),
+      unusedFiles: report.unusedFiles.filter(f => f.confidence >= options.threshold!),
+      safeToDelete: report.safeToDelete.filter(e => e.confidence >= options.threshold!),
+    };
+  }
+
+  // Format output
+  const output = options.json
+    ? detector.formatReportJSON(filteredReport)
+    : detector.formatReport(filteredReport);
+
+  return {
+    success: true,
+    message: output,
+    data: filteredReport
+  };
+}
+
+// Run test impact analysis
+export function runTestImpactAnalysis(
+  projectPath?: string,
+  options: { json?: boolean; changed?: string[]; gitDiff?: boolean; branch?: string } = {}
+): CommandResult {
+  // Determine project path
+  let targetPath = projectPath;
+  if (!targetPath) {
+    const activeProject = projectManager.getActiveProject();
+    if (!activeProject) {
+      return {
+        success: false,
+        message: 'No project specified and no active project. Use "codeimpact projects switch <id>" first.'
+      };
+    }
+    targetPath = activeProject.path;
+  }
+
+  // Get project info
+  const projectInfo = projectManager.getProjectByPath(targetPath);
+  if (!projectInfo) {
+    return {
+      success: false,
+      message: `Project not registered: ${targetPath}. Use "codeimpact projects add ${targetPath}" first.`
+    };
+  }
+
+  // Open database
+  const dbPath = findDatabasePath(projectInfo);
+  if (!dbPath) {
+    return {
+      success: false,
+      message: `Project database not found. Run "codeimpact init ${targetPath}" first to index the project.`
+    };
+  }
+
+  const db = initializeDatabase(dbPath);
+  const tier2 = new Tier2Storage(db);
+  const testAwareness = new TestAwareness(targetPath, db, tier2);
+
+  // Initialize test awareness (indexes test files)
+  testAwareness.initialize();
+
+  // Create analyzer
+  const analyzer = new TestImpactAnalyzer(tier2, testAwareness, targetPath);
+
+  // Determine changed files
+  let changedFiles: string[] = [];
+
+  if (options.changed && options.changed.length > 0) {
+    // Use explicitly provided files
+    changedFiles = options.changed;
+  } else if (options.branch) {
+    // Compare to branch
+    changedFiles = analyzer.getChangedFilesFromBranch(options.branch);
+  } else if (options.gitDiff) {
+    // Use git diff (staged + unstaged)
+    changedFiles = analyzer.getChangedFilesFromGit();
+  } else {
+    // Default: use git diff
+    changedFiles = analyzer.getChangedFilesFromGit();
+  }
+
+  if (changedFiles.length === 0) {
+    db.close();
+    return {
+      success: true,
+      message: 'No changed files detected. Use --changed <file> to specify files, or make changes to your code.',
+      data: null
+    };
+  }
+
+  // Run analysis
+  const result = analyzer.analyzeImpact(changedFiles);
+  db.close();
+
+  // Format output
+  const output = options.json
+    ? analyzer.formatReportJSON(result)
+    : analyzer.formatReport(result);
+
+  return {
+    success: true,
+    message: output,
+    data: result
+  };
+}
+
+// Run blast radius analysis
+export function runBlastRadiusAnalysis(
+  filePath: string,
+  projectPath?: string,
+  options: { json?: boolean; depth?: number } = {}
+): CommandResult {
+  if (!filePath) {
+    return {
+      success: false,
+      message: 'Error: File path required. Usage: codeimpact impact <file>'
+    };
+  }
+
+  // Determine project path
+  let targetPath = projectPath;
+  if (!targetPath) {
+    const activeProject = projectManager.getActiveProject();
+    if (!activeProject) {
+      return {
+        success: false,
+        message: 'No project specified and no active project. Use "codeimpact projects switch <id>" first.'
+      };
+    }
+    targetPath = activeProject.path;
+  }
+
+  // Get project info
+  const projectInfo = projectManager.getProjectByPath(targetPath);
+  if (!projectInfo) {
+    return {
+      success: false,
+      message: `Project not registered: ${targetPath}. Use "codeimpact projects add ${targetPath}" first.`
+    };
+  }
+
+  // Open database
+  const dbPath = findDatabasePath(projectInfo);
+  if (!dbPath) {
+    return {
+      success: false,
+      message: `Project database not found. Run "codeimpact init ${targetPath}" first to index the project.`
+    };
+  }
+
+  const db = initializeDatabase(dbPath);
+  const tier2 = new Tier2Storage(db);
+
+  // Optionally create TestAwareness for coverage info
+  let testAwareness: TestAwareness | null = null;
+  try {
+    testAwareness = new TestAwareness(targetPath, db, tier2);
+    testAwareness.initialize();
+  } catch {
+    // TestAwareness is optional, continue without it
+  }
+
+  // Create analyzer and run analysis
+  const analyzer = new BlastRadiusAnalyzer(tier2, testAwareness);
+  const maxDepth = options.depth ?? 3;
+  const result = analyzer.analyze(filePath, maxDepth);
+  db.close();
+
+  // Format output
+  const output = options.json
+    ? analyzer.formatReportJSON(result)
+    : analyzer.formatReport(result);
+
+  return {
+    success: true,
+    message: output,
+    data: result
+  };
+}
+
+// Run usage stats / cost dashboard
+export function runUsageStats(
+  projectPath?: string,
+  options: { json?: boolean; period?: StatsPeriod } = {}
+): CommandResult {
+  // Determine project path
+  let targetPath = projectPath;
+  if (!targetPath) {
+    const activeProject = projectManager.getActiveProject();
+    if (!activeProject) {
+      return {
+        success: false,
+        message: 'No project specified and no active project. Use "codeimpact projects switch <id>" first.'
+      };
+    }
+    targetPath = activeProject.path;
+  }
+
+  // Get project info
+  const projectInfo = projectManager.getProjectByPath(targetPath);
+  if (!projectInfo) {
+    return {
+      success: false,
+      message: `Project not registered: ${targetPath}. Use "codeimpact projects add ${targetPath}" first.`
+    };
+  }
+
+  // Open database
+  const dbPath = findDatabasePath(projectInfo);
+  if (!dbPath) {
+    return {
+      success: false,
+      message: `Project database not found. Run "codeimpact init ${targetPath}" first to index the project.`
+    };
+  }
+
+  const db = initializeDatabase(dbPath);
+  const tier2 = new Tier2Storage(db);
+
+  // Get usage stats
+  const tracker = new CostTracker(tier2);
+  const period = options.period || 'month';
+  const stats = tracker.getStats(period);
+  db.close();
+
+  // Format output
+  const output = options.json
+    ? tracker.formatReportJSON(stats)
+    : tracker.formatReport(stats);
+
+  return {
+    success: true,
+    message: output,
+    data: stats
   };
 }
 
@@ -602,6 +910,10 @@ COMMANDS:
   init [path]               Initialize project + auto-configure AI tools
   serve [options]           Start HTTP API server (for non-MCP tools)
   (no command)              Start MCP server
+  deadcode [options]        Find unused exports and dead code
+  test-impact [options]     Find which tests to run for changed files
+  impact <file> [options]   Analyze blast radius and risk of changing a file
+  stats [options]           Show token usage and cost savings dashboard
   projects list             List all registered projects
   projects add <path>       Add a project to the registry
   projects remove <id>      Remove a project from the registry
@@ -616,6 +928,13 @@ OPTIONS:
   --port <number>           Port for HTTP server (default: 3333)
   --output, -o <dir>        Output directory for exports
   --format <type>           ADR format: madr, nygard, simple
+  --json                    Output as JSON (for deadcode, test-impact, stats)
+  --threshold <percent>     Minimum confidence % to report (for deadcode)
+  --changed <file>          Specify changed file(s) (for test-impact)
+  --git-diff                Use git diff to detect changes (default)
+  --branch <name>           Compare to branch (e.g., main)
+  --depth <n>               Max dependency depth to analyze (default: 3)
+  --period <type>           Time period: day, week, month, all (for stats)
 
 EXAMPLES:
   # Quick setup (auto-configures Claude Desktop)
@@ -636,6 +955,24 @@ EXAMPLES:
 
   # Export decisions to ADR files
   codeimpact export --format madr
+
+  # Find dead code (unused exports)
+  codeimpact deadcode
+  codeimpact deadcode --json --threshold 80
+
+  # Find which tests to run for your changes
+  codeimpact test-impact
+  codeimpact test-impact --changed src/auth/login.ts
+  codeimpact test-impact --branch main --json
+
+  # Analyze blast radius of a file change
+  codeimpact impact src/core/engine.ts
+  codeimpact impact src/auth/session.ts --depth 5 --json
+
+  # Show token usage and cost savings
+  codeimpact stats
+  codeimpact stats --period week
+  codeimpact stats --period all --json
 
   # Discover projects
   codeimpact projects discover
@@ -747,6 +1084,144 @@ export function executeCLI(args: string[]): void {
       const result = exportDecisions(undefined, { outputDir, format });
       console.log(result.message);
       if (!result.success) process.exit(1);
+      break;
+    }
+
+    case 'deadcode': {
+      // Parse deadcode options
+      let json = false;
+      let threshold: number | undefined;
+      let projectPath: string | undefined;
+
+      for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        if (arg === '--json') {
+          json = true;
+        } else if (arg === '--threshold' && nextArg) {
+          threshold = parseInt(nextArg, 10);
+          if (isNaN(threshold) || threshold < 0 || threshold > 100) {
+            console.error('Error: Threshold must be a number between 0 and 100.');
+            process.exit(1);
+          }
+          i++;
+        } else if ((arg === '--project' || arg === '-p') && nextArg) {
+          projectPath = nextArg;
+          i++;
+        }
+      }
+
+      const result = runDeadCodeAnalysis(projectPath, { json, threshold });
+      console.log(result.message);
+      if (!result.success) process.exit(1);
+      break;
+    }
+
+    case 'test-impact': {
+      // Parse test-impact options
+      let json = false;
+      let gitDiff = false;
+      let branch: string | undefined;
+      let projectPath: string | undefined;
+      const changedFiles: string[] = [];
+
+      for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        if (arg === '--json') {
+          json = true;
+        } else if (arg === '--git-diff') {
+          gitDiff = true;
+        } else if (arg === '--branch' && nextArg) {
+          branch = nextArg;
+          i++;
+        } else if (arg === '--changed' && nextArg) {
+          changedFiles.push(nextArg);
+          i++;
+        } else if ((arg === '--project' || arg === '-p') && nextArg) {
+          projectPath = nextArg;
+          i++;
+        }
+      }
+
+      const result = runTestImpactAnalysis(projectPath, {
+        json,
+        changed: changedFiles.length > 0 ? changedFiles : undefined,
+        gitDiff,
+        branch,
+      });
+      console.log(result.message);
+      if (!result.success) process.exit(1);
+      break;
+    }
+
+    case 'impact': {
+      // Parse impact options
+      let json = false;
+      let depth = 3;
+      let projectPath: string | undefined;
+      let targetFile: string | undefined;
+
+      for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        if (arg === '--json') {
+          json = true;
+        } else if (arg === '--depth' && nextArg) {
+          depth = parseInt(nextArg, 10);
+          if (isNaN(depth) || depth < 1 || depth > 10) {
+            console.error('Error: Depth must be a number between 1 and 10.');
+            process.exit(1);
+          }
+          i++;
+        } else if ((arg === '--project' || arg === '-p') && nextArg) {
+          projectPath = nextArg;
+          i++;
+        } else if (!arg.startsWith('-') && !targetFile) {
+          targetFile = arg;
+        }
+      }
+
+      if (!targetFile) {
+        console.error('Error: File path required.');
+        console.error('Usage: codeimpact impact <file> [--depth <n>] [--json]');
+        process.exit(1);
+      }
+
+      const result = runBlastRadiusAnalysis(targetFile, projectPath, { json, depth });
+      console.log(result.message);
+      if (!result.success) process.exit(1);
+      break;
+    }
+
+    case 'stats': {
+      // Parse stats options
+      let json = false;
+      let period: StatsPeriod | undefined;
+      let projectPath: string | undefined;
+
+      for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        if (arg === '--json') {
+          json = true;
+        } else if (arg === '--period' && nextArg) {
+          const validPeriods = ['day', 'week', 'month', 'all'];
+          if (!validPeriods.includes(nextArg)) {
+            console.error(`Error: Invalid period. Must be one of: ${validPeriods.join(', ')}`);
+            process.exit(1);
+          }
+          period = nextArg as StatsPeriod;
+          i++;
+        } else if ((arg === '--project' || arg === '-p') && nextArg) {
+          projectPath = nextArg;
+          i++;
+        }
+      }
+
+      const statsResult = runUsageStats(projectPath, { json, period });
+      console.log(statsResult.message);
+      if (!statsResult.success) process.exit(1);
       break;
     }
 
