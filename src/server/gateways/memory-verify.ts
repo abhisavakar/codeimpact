@@ -280,6 +280,10 @@ export async function handleMemoryVerify(
   response.summary = buildSummary(response);
   response.suggestions = [...new Set(suggestions)].slice(0, 10);
 
+  // Track token usage for stats
+  const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
+  engine.recordTokenUsage('memory_verify', tokensUsed);
+
   return response;
 }
 

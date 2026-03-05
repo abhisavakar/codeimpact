@@ -21,6 +21,14 @@ import {
 } from './aggregator.js';
 
 /**
+ * Estimate token count from response size.
+ */
+function estimateTokens(response: MemoryReviewResponse): number {
+  const json = JSON.stringify(response);
+  return Math.ceil(json.length / 4);
+}
+
+/**
  * Handle a memory_review gateway call
  */
 export async function handleMemoryReview(
@@ -30,31 +38,48 @@ export async function handleMemoryReview(
   const action = detectReviewAction(input);
   const sourcesUsed: string[] = [];
 
+  let response: MemoryReviewResponse;
+
   // Handle specific actions
   if (action !== 'full') {
     switch (action) {
       case 'pattern':
-        return handlePatternOnly(engine, input, sourcesUsed);
+        response = await handlePatternOnly(engine, input, sourcesUsed);
+        break;
 
       case 'conflicts':
-        return handleConflictsOnly(engine, input, sourcesUsed);
+        response = await handleConflictsOnly(engine, input, sourcesUsed);
+        break;
 
       case 'tests':
-        return handleTestsOnly(engine, input, sourcesUsed);
+        response = await handleTestsOnly(engine, input, sourcesUsed);
+        break;
 
       case 'confidence':
-        return handleConfidenceOnly(engine, input, sourcesUsed);
+        response = await handleConfidenceOnly(engine, input, sourcesUsed);
+        break;
 
       case 'bugs':
-        return handleBugsOnly(engine, input, sourcesUsed);
+        response = await handleBugsOnly(engine, input, sourcesUsed);
+        break;
 
       case 'coverage':
-        return handleCoverageOnly(engine, input, sourcesUsed);
+        response = await handleCoverageOnly(engine, input, sourcesUsed);
+        break;
+
+      default:
+        response = await handleFullReview(engine, input, sourcesUsed);
     }
+  } else {
+    // Full review - run applicable checks in parallel
+    response = await handleFullReview(engine, input, sourcesUsed);
   }
 
-  // Full review - run applicable checks in parallel
-  return handleFullReview(engine, input, sourcesUsed);
+  // Track token usage for stats
+  const tokensUsed = estimateTokens(response);
+  engine.recordTokenUsage(`memory_review:${action}`, tokensUsed);
+
+  return response;
 }
 
 /**

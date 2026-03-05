@@ -126,33 +126,47 @@ export async function handleMemoryRecord(
     }
   }
 
+  let response: MemoryRecordResponse;
+
   // Route to appropriate recording method
   switch (recordType) {
     case 'decision':
-      return handleRecordDecision(engine, input, warnings);
+      response = await handleRecordDecision(engine, input, warnings);
+      break;
 
     case 'pattern':
-      return handleRecordPattern(engine, input);
+      response = await handleRecordPattern(engine, input);
+      break;
 
     case 'example':
-      return handleRecordPatternExample(engine, input);
+      response = await handleRecordPatternExample(engine, input);
+      break;
 
     case 'feedback':
-      return handleRecordFeedback(engine, input);
+      response = await handleRecordFeedback(engine, input);
+      break;
 
     case 'feature':
-      return handleRecordFeature(engine, input);
+      response = await handleRecordFeature(engine, input);
+      break;
 
     case 'critical':
-      return handleRecordCritical(engine, input);
+      response = await handleRecordCritical(engine, input);
+      break;
 
     default:
-      return {
+      response = {
         success: false,
         type: recordType,
         message: `Unknown record type: ${recordType}`,
       };
   }
+
+  // Track token usage for stats
+  const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
+  engine.recordTokenUsage(`memory_record:${recordType}`, tokensUsed);
+
+  return response;
 }
 
 /**

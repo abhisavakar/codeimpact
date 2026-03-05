@@ -106,20 +106,32 @@ export async function handleMemoryGhost(
   const mode = input.mode || 'full';
   const sourcesUsed: string[] = [];
 
+  let response: MemoryGhostResponse;
+
   switch (mode) {
     case 'conflicts':
-      return handleConflictsMode(engine, input, sourcesUsed);
+      response = await handleConflictsMode(engine, input, sourcesUsed);
+      break;
 
     case 'dejavu':
-      return handleDejaVuMode(engine, input, sourcesUsed);
+      response = await handleDejaVuMode(engine, input, sourcesUsed);
+      break;
 
     case 'resurrect':
-      return handleResurrectMode(engine, input, sourcesUsed);
+      response = await handleResurrectMode(engine, input, sourcesUsed);
+      break;
 
     case 'full':
     default:
-      return handleFullMode(engine, input, sourcesUsed);
+      response = await handleFullMode(engine, input, sourcesUsed);
+      break;
   }
+
+  // Track token usage for stats
+  const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
+  engine.recordTokenUsage(`memory_ghost:${mode}`, tokensUsed);
+
+  return response;
 }
 
 /**

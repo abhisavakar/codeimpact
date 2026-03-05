@@ -13,6 +13,15 @@ import { aggregateQueryResults, mergeSearchResults } from './aggregator.js';
 import { formatTimeAgo } from '../../utils/time.js';
 
 /**
+ * Estimate token count from response size.
+ * Rough estimate: 1 token ≈ 4 characters
+ */
+function estimateTokens(response: MemoryQueryResponse): number {
+  const json = JSON.stringify(response);
+  return Math.ceil(json.length / 4);
+}
+
+/**
  * Handle a memory_query gateway call
  */
 export async function handleMemoryQuery(
@@ -22,39 +31,57 @@ export async function handleMemoryQuery(
   const action = detectQueryAction(input);
   const sourcesUsed: string[] = [];
 
+  let response: MemoryQueryResponse;
+
   // Route based on detected/explicit action
   switch (action) {
     case 'file':
-      return handleFileQuery(engine, input, sourcesUsed);
+      response = await handleFileQuery(engine, input, sourcesUsed);
+      break;
 
     case 'summary':
-      return handleSummaryQuery(engine, input, sourcesUsed);
+      response = await handleSummaryQuery(engine, input, sourcesUsed);
+      break;
 
     case 'symbol':
-      return handleSymbolQuery(engine, input, sourcesUsed);
+      response = await handleSymbolQuery(engine, input, sourcesUsed);
+      break;
 
     case 'dependencies':
-      return handleDependenciesQuery(engine, input, sourcesUsed);
+      response = await handleDependenciesQuery(engine, input, sourcesUsed);
+      break;
 
     case 'predict':
-      return handlePredictQuery(engine, input, sourcesUsed);
+      response = await handlePredictQuery(engine, input, sourcesUsed);
+      break;
 
     case 'confidence':
-      return handleConfidenceQuery(engine, input, sourcesUsed);
+      response = await handleConfidenceQuery(engine, input, sourcesUsed);
+      break;
 
     case 'sources':
-      return handleSourcesQuery(engine, input, sourcesUsed);
+      response = await handleSourcesQuery(engine, input, sourcesUsed);
+      break;
 
     case 'existing':
-      return handleExistingQuery(engine, input, sourcesUsed);
+      response = await handleExistingQuery(engine, input, sourcesUsed);
+      break;
 
     case 'search':
-      return handleSearchOnlyQuery(engine, input, sourcesUsed);
+      response = await handleSearchOnlyQuery(engine, input, sourcesUsed);
+      break;
 
     case 'context':
     default:
-      return handleContextQuery(engine, input, sourcesUsed);
+      response = await handleContextQuery(engine, input, sourcesUsed);
+      break;
   }
+
+  // Track token usage for stats
+  const tokensUsed = estimateTokens(response);
+  engine.recordTokenUsage(`memory_query:${action}`, tokensUsed);
+
+  return response;
 }
 
 /**

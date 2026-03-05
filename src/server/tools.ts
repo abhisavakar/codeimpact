@@ -2479,7 +2479,7 @@ export async function handleToolCall(
 
       const result = engine.getBlastRadius(file, maxDepth);
 
-      return {
+      const response = {
         file: result.file,
         risk_score: result.riskScore,
         risk_level: result.riskLevel,
@@ -2501,6 +2501,12 @@ export async function handleToolCall(
         recommendation: result.recommendation,
         message: `Risk: ${result.riskScore}/100 (${result.riskLevel.toUpperCase()}). ${result.totalAffected} files affected. ${result.recommendation}`
       };
+
+      // Track token usage
+      const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
+      engine.recordTokenUsage('memory_blast_radius', tokensUsed);
+
+      return response;
     }
 
     default:

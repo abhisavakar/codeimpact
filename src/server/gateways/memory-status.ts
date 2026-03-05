@@ -21,45 +21,65 @@ export async function handleMemoryStatus(
   const action = detectStatusAction(input);
   const sourcesUsed: string[] = [];
 
+  let response: MemoryStatusResponse;
+
   // Handle specific actions
   switch (action) {
     case 'summary':
-      return handleProjectSummary(engine, input, sourcesUsed);
+      response = await handleProjectSummary(engine, input, sourcesUsed);
+      break;
 
     case 'happened':
-      return handleWhatHappened(engine, input, sourcesUsed);
+      response = await handleWhatHappened(engine, input, sourcesUsed);
+      break;
 
     case 'changed':
-      return handleWhatChanged(engine, input, sourcesUsed);
+      response = await handleWhatChanged(engine, input, sourcesUsed);
+      break;
 
     case 'architecture':
-      return handleArchitecture(engine, input, sourcesUsed);
+      response = await handleArchitecture(engine, input, sourcesUsed);
+      break;
 
     case 'changelog':
-      return handleChangelog(engine, input, sourcesUsed);
+      response = await handleChangelog(engine, input, sourcesUsed);
+      break;
 
     case 'health':
-      return handleContextHealth(engine, input, sourcesUsed);
+      response = await handleContextHealth(engine, input, sourcesUsed);
+      break;
 
     case 'patterns':
-      return handlePatterns(engine, input, sourcesUsed);
+      response = await handlePatterns(engine, input, sourcesUsed);
+      break;
 
     case 'stats':
-      return handleArchitectureStats(engine, input, sourcesUsed);
+      response = await handleArchitectureStats(engine, input, sourcesUsed);
+      break;
 
     case 'undocumented':
-      return handleUndocumented(engine, input, sourcesUsed);
+      response = await handleUndocumented(engine, input, sourcesUsed);
+      break;
 
     case 'critical':
-      return handleCriticalContext(engine, input, sourcesUsed);
+      response = await handleCriticalContext(engine, input, sourcesUsed);
+      break;
 
     case 'learning':
-      return handleLearningStats(engine, input, sourcesUsed);
+      response = await handleLearningStats(engine, input, sourcesUsed);
+      break;
 
     default:
       // Default to project summary
-      return handleProjectSummary(engine, input, sourcesUsed);
+      response = await handleProjectSummary(engine, input, sourcesUsed);
+      break;
   }
+
+  // Track token usage for stats
+  const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
+  engine.recordTokenUsage(`memory_status:${action}`, tokensUsed);
+
+  return response;
 }
 
 /**
