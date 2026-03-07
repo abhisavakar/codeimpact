@@ -509,6 +509,231 @@ export function runUsageStats(
   };
 }
 
+// Analytics dashboard with cleaner table-based output
+export function runAnalytics(
+  projectPath?: string,
+  options: { json?: boolean; period?: StatsPeriod; export?: string } = {}
+): CommandResult {
+  // Determine project path
+  let targetPath = projectPath;
+  if (!targetPath) {
+    const activeProject = projectManager.getActiveProject();
+    if (!activeProject) {
+      return {
+        success: false,
+        message: 'No project specified and no active project. Use "codeimpact projects switch <id>" first.'
+      };
+    }
+    targetPath = activeProject.path;
+  }
+
+  // Get project info
+  const projectInfo = projectManager.getProjectByPath(targetPath);
+  if (!projectInfo) {
+    return {
+      success: false,
+      message: `Project not registered: ${targetPath}. Use "codeimpact projects add ${targetPath}" first.`
+    };
+  }
+
+  // Open database
+  const dbPath = findDatabasePath(projectInfo);
+  if (!dbPath) {
+    return {
+      success: false,
+      message: `Project database not found. Run "codeimpact init ${targetPath}" first to index the project.`
+    };
+  }
+
+  const db = initializeDatabase(dbPath);
+  const tier2 = new Tier2Storage(db);
+  const tracker = new CostTracker(tier2);
+  const period = options.period || 'week';
+  const stats = tracker.getStats(period);
+  db.close();
+
+  // JSON output
+  if (options.json) {
+    const jsonOutput = tracker.formatReportJSON(stats);
+    if (options.export) {
+      writeFileSync(options.export, jsonOutput, 'utf-8');
+      return {
+        success: true,
+        message: `Analytics exported to ${options.export}`,
+        data: stats
+      };
+    }
+    return {
+      success: true,
+      message: jsonOutput,
+      data: stats
+    };
+  }
+
+  // Table-based output
+  const lines: string[] = [];
+  const periodLabel = period === 'day' ? 'Today' : period === 'week' ? 'Last 7 Days' : period === 'month' ? 'Last 30 Days' : 'All Time';
+
+  lines.push(`Tool Usage (${periodLabel}):`);
+  lines.push('─'.repeat(65));
+  lines.push(padRight('Tool', 28) + padRight('Calls', 10) + padRight('Tokens', 15) + 'Cost');
+  lines.push('─'.repeat(65));
+
+  for (const qt of stats.byQueryType) {
+    const tokens = formatTokensShort(qt.tokensUsed);
+    const cost = `$${qt.costDollars.toFixed(2)}`;
+    lines.push(padRight(qt.queryType, 28) + padRight(String(qt.queries), 10) + padRight(tokens, 15) + cost);
+  }
+
+  lines.push('─'.repeat(65));
+  const totalTokens = formatTokensShort(stats.totalTokensUsed);
+  const totalCost = `$${stats.totalCostDollars.toFixed(2)}`;
+  lines.push(padRight('TOTAL', 28) + padRight(String(stats.totalQueries), 10) + padRight(totalTokens, 15) + totalCost);
+  lines.push('');
+
+  // Most used actions breakdown
+  if (stats.byQueryType.length > 0) {
+    lines.push('Most Used:');
+    const sorted = [...stats.byQueryType].sort((a, b) => b.queries - a.queries);
+    for (let i = 0; i < Math.min(3, sorted.length); i++) {
+      const qt = sorted[i];
+      const pct = stats.totalQueries > 0 ? Math.round((qt.queries / stats.totalQueries) * 100) : 0;
+      lines.push(`  ${i + 1}. ${qt.queryType} (${pct}%)`);
+    }
+  }
+
+  const output = lines.join('\n');
+
+  if (options.export) {
+    const jsonOutput = tracker.formatReportJSON(stats);
+    writeFileSync(options.export, jsonOutput, 'utf-8');
+    return {
+      success: true,
+      message: output + `\n\nExported to ${options.export}`,
+      data: stats
+    };
+  }
+
+  return {
+    success: true,
+    message: output,
+    data: stats
+  };
+}
+
+// Helper: pad string to right
+function padRight(str: string, len: number): string {
+  return str.length >= len ? str : str + ' '.repeat(len - str.length);
+}
+
+// Helper: format tokens with K/M suffix (compact)
+function formatTokensShort(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(1)}M`;
+  } else if (tokens >= 1_000) {
+    return `${(tokens / 1_000).toFixed(1)}K`;
+  }
+  return String(tokens);
+}
+
+// Helper: format timestamp as HH:MM:SS
+function formatTime(timestamp: number): string {
+  const date = new Date(timestamp * 1000);
+  const h = String(date.getHours()).padStart(2, '0');
+  const m = String(date.getMinutes()).padStart(2, '0');
+  const s = String(date.getSeconds()).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+// Live activity log - streams recent token usage events
+export async function runTail(
+  projectPath?: string,
+  options: { lines?: number } = {}
+): Promise<CommandResult> {
+  // Determine project path
+  let targetPath = projectPath;
+  if (!targetPath) {
+    const activeProject = projectManager.getActiveProject();
+    if (!activeProject) {
+      return {
+        success: false,
+        message: 'No project specified and no active project. Use "codeimpact projects switch <id>" first.'
+      };
+    }
+    targetPath = activeProject.path;
+  }
+
+  // Get project info
+  const projectInfo = projectManager.getProjectByPath(targetPath);
+  if (!projectInfo) {
+    return {
+      success: false,
+      message: `Project not registered: ${targetPath}. Use "codeimpact projects add ${targetPath}" first.`
+    };
+  }
+
+  // Open database
+  const dbPath = findDatabasePath(projectInfo);
+  if (!dbPath) {
+    return {
+      success: false,
+      message: `Project database not found. Run "codeimpact init ${targetPath}" first to index the project.`
+    };
+  }
+
+  const db = initializeDatabase(dbPath);
+  const tier2 = new Tier2Storage(db);
+
+  const initialLines = options.lines || 10;
+  let lastTimestamp = 0;
+  let running = true;
+
+  // Handle Ctrl+C gracefully
+  const cleanup = () => {
+    running = false;
+    db.close();
+    console.log('\nStopped.');
+    process.exit(0);
+  };
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+
+  console.log(`Watching CodeImpact activity... (Ctrl+C to stop)\n`);
+
+  // Initial fetch
+  const initialEvents = tier2.getRecentUsageEvents(initialLines);
+
+  // Display in chronological order (reverse the DESC order)
+  for (const event of initialEvents.reverse()) {
+    const time = formatTime(event.timestamp);
+    const tokens = formatTokensShort(event.tokensUsed);
+    const cost = `$${event.costDollars.toFixed(2)}`;
+    console.log(`[${time}] ${padRight(event.queryType, 22)} ${padRight(tokens, 12)} ${cost}`);
+    lastTimestamp = Math.max(lastTimestamp, event.timestamp);
+  }
+
+  // Poll for new events
+  while (running) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    if (!running) break;
+
+    const newEvents = tier2.getRecentUsageEvents(50, lastTimestamp);
+
+    // Display in chronological order
+    for (const event of newEvents.reverse()) {
+      const time = formatTime(event.timestamp);
+      const tokens = formatTokensShort(event.tokensUsed);
+      const cost = `$${event.costDollars.toFixed(2)}`;
+      console.log(`[${time}] ${padRight(event.queryType, 22)} ${padRight(tokens, 12)} ${cost}`);
+      lastTimestamp = Math.max(lastTimestamp, event.timestamp);
+    }
+  }
+
+  db.close();
+  return { success: true, message: 'Stopped.' };
+}
+
 // Force reindex - clears database for fresh indexing
 export function forceReindex(projectPath?: string): CommandResult {
   // Determine project path
@@ -1205,7 +1430,9 @@ COMMANDS:
   deadcode [options]        Find unused exports and dead code
   test-impact [options]     Find which tests to run for changed files
   impact <file> [options]   Analyze blast radius and risk of changing a file
-  stats [options]           Show token usage and costs
+  stats [options]           Show token usage and costs (verbose)
+  analytics [options]       Usage dashboard with table-based output
+  tail [options]            Live activity log (streams new events)
   reindex                   Clear index for fresh re-indexing (after git issues)
   projects list             List all registered projects
   projects add <path>       Add a project to the registry
@@ -1227,7 +1454,9 @@ OPTIONS:
   --git-diff                Use git diff to detect changes (default)
   --branch <name>           Compare to branch (e.g., main)
   --depth <n>               Max dependency depth to analyze (default: 3)
-  --period <type>           Time period: day, week, month, all (for stats)
+  --period <type>           Time period: day, week, month, all (for stats/analytics)
+  --export, -o <file>       Export analytics to JSON file
+  --lines, -n <count>       Number of initial lines to show (for tail, default: 10)
 
 EXAMPLES:
   # Quick setup (auto-configures Claude Desktop)
@@ -1266,6 +1495,15 @@ EXAMPLES:
   codeimpact stats
   codeimpact stats --period week
   codeimpact stats --period all --json
+
+  # Analytics dashboard (cleaner table output)
+  codeimpact analytics
+  codeimpact analytics --period week
+  codeimpact analytics --export usage.json
+
+  # Live activity log (watch token usage in real-time)
+  codeimpact tail
+  codeimpact tail --lines 20
 
   # Discover projects
   codeimpact projects discover
@@ -1515,6 +1753,75 @@ export function executeCLI(args: string[]): void {
       const statsResult = runUsageStats(projectPath, { json, period });
       console.log(statsResult.message);
       if (!statsResult.success) process.exit(1);
+      break;
+    }
+
+    case 'analytics': {
+      // Parse analytics options
+      let json = false;
+      let period: StatsPeriod | undefined;
+      let projectPath: string | undefined;
+      let exportPath: string | undefined;
+
+      for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        if (arg === '--json') {
+          json = true;
+        } else if (arg === '--period' && nextArg) {
+          const validPeriods = ['day', 'week', 'month', 'all'];
+          if (!validPeriods.includes(nextArg)) {
+            console.error(`Error: Invalid period. Must be one of: ${validPeriods.join(', ')}`);
+            process.exit(1);
+          }
+          period = nextArg as StatsPeriod;
+          i++;
+        } else if ((arg === '--project' || arg === '-p') && nextArg) {
+          projectPath = nextArg;
+          i++;
+        } else if ((arg === '--export' || arg === '-o') && nextArg) {
+          exportPath = nextArg;
+          i++;
+        }
+      }
+
+      const analyticsResult = runAnalytics(projectPath, { json, period, export: exportPath });
+      console.log(analyticsResult.message);
+      if (!analyticsResult.success) process.exit(1);
+      break;
+    }
+
+    case 'tail': {
+      // Parse tail options
+      let projectPath: string | undefined;
+      let lines: number | undefined;
+
+      for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        if ((arg === '--lines' || arg === '-n') && nextArg) {
+          lines = parseInt(nextArg, 10);
+          if (isNaN(lines) || lines < 1) {
+            console.error('Error: Lines must be a positive number.');
+            process.exit(1);
+          }
+          i++;
+        } else if ((arg === '--project' || arg === '-p') && nextArg) {
+          projectPath = nextArg;
+          i++;
+        }
+      }
+
+      // runTail is async, need to await it
+      runTail(projectPath, { lines }).then(result => {
+        if (!result.success) {
+          console.error(result.message);
+          process.exit(1);
+        }
+      }).catch(err => {
+        console.error('Error:', err.message);
+        process.exit(1);
+      });
       break;
     }
 
