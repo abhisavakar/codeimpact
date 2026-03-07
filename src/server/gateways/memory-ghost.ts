@@ -11,6 +11,7 @@
  */
 
 import type { CodeImpactEngine, GhostInsight, ConflictWarning, DejaVuMatch, ResurrectedContext } from '../../core/engine.js';
+import { countTokens, countObjectTokens } from '../../utils/token-counter.js';
 
 export type MemoryGhostMode = 'full' | 'conflicts' | 'dejavu' | 'resurrect';
 
@@ -128,8 +129,9 @@ export async function handleMemoryGhost(
   }
 
   // Track token usage for stats
-  const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
-  engine.recordTokenUsage(`memory_ghost:${mode}`, tokensUsed);
+  const inputTokens = countTokens(input.query || input.code || '');
+  const outputTokens = countObjectTokens(response);
+  engine.recordTokenUsage(`memory_ghost:${mode}`, inputTokens, outputTokens);
 
   return response;
 }

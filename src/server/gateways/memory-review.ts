@@ -19,14 +19,7 @@ import {
   type TestCheckResult,
   type ExistingFunctionResult,
 } from './aggregator.js';
-
-/**
- * Estimate token count from response size.
- */
-function estimateTokens(response: MemoryReviewResponse): number {
-  const json = JSON.stringify(response);
-  return Math.ceil(json.length / 4);
-}
+import { countTokens, countObjectTokens } from '../../utils/token-counter.js';
 
 /**
  * Handle a memory_review gateway call
@@ -75,9 +68,10 @@ export async function handleMemoryReview(
     response = await handleFullReview(engine, input, sourcesUsed);
   }
 
-  // Track token usage for stats
-  const tokensUsed = estimateTokens(response);
-  engine.recordTokenUsage(`memory_review:${action}`, tokensUsed);
+  // Track token usage for stats (input = code, output = response)
+  const inputTokens = countTokens(input.code || '');
+  const outputTokens = countObjectTokens(response);
+  engine.recordTokenUsage(`memory_review:${action}`, inputTokens, outputTokens);
 
   return response;
 }

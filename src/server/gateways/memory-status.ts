@@ -10,6 +10,7 @@ import type { CodeImpactEngine } from '../../core/engine.js';
 import type { MemoryStatusInput, MemoryStatusResponse, MemoryStatusAction } from './types.js';
 import { detectStatusAction, getStatusGathers } from './router.js';
 import { aggregateStatusResults } from './aggregator.js';
+import { countObjectTokens } from '../../utils/token-counter.js';
 
 /**
  * Handle a memory_status gateway call
@@ -75,9 +76,10 @@ export async function handleMemoryStatus(
       break;
   }
 
-  // Track token usage for stats
-  const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
-  engine.recordTokenUsage(`memory_status:${action}`, tokensUsed);
+  // Track token usage for stats (minimal input for status queries)
+  const inputTokens = 10; // Status queries have minimal input
+  const outputTokens = countObjectTokens(response);
+  engine.recordTokenUsage(`memory_status:${action}`, inputTokens, outputTokens);
 
   return response;
 }

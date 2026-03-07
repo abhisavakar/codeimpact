@@ -1,7 +1,7 @@
 /**
  * Gateway Pattern Implementation
  *
- * Reduces 51 MCP tools to 6 gateway tools + 6 standalone (12 total),
+ * Reduces 51 MCP tools to 6 gateway tools + 7 standalone (13 total),
  * saving ~5,000 tokens per API call on tool description overhead.
  *
  * Benchmark Context: 759x speedup, 51.7% token reduction, p < 0.001, Cohen's d = 3.46
@@ -405,6 +405,24 @@ export const standaloneDefinitions: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {}
+    }
+  },
+  {
+    name: 'memory_blast_radius',
+    description: 'BEFORE changing critical files, use this to understand impact. Returns: risk_score (0-100), affected files count, critical paths (auth, payment, security), test coverage, and recommendations (e.g., "Senior review required"). Use for: high-risk changes, unfamiliar code areas, files with many dependents. Helps answer: "Is it safe to change this file?"',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          description: 'Path to the file to analyze'
+        },
+        max_depth: {
+          type: 'number',
+          description: 'Maximum dependency depth to analyze (1-10, default: 3)'
+        }
+      },
+      required: ['file']
     }
   }
 ];

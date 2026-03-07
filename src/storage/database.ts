@@ -269,12 +269,32 @@ export function initializeDatabase(dbPath: string): Database.Database {
       query_type TEXT NOT NULL,
       tokens_used INTEGER NOT NULL,
       tokens_saved INTEGER NOT NULL DEFAULT 0,
-      cost_dollars REAL NOT NULL DEFAULT 0
+      cost_dollars REAL NOT NULL DEFAULT 0,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE INDEX IF NOT EXISTS idx_token_usage_timestamp ON token_usage(timestamp);
     CREATE INDEX IF NOT EXISTS idx_token_usage_query_type ON token_usage(query_type);
+
+    -- Migration: Add input/output columns if they don't exist (for existing databases)
+    -- SQLite doesn't support IF NOT EXISTS for columns, so we handle this in code
   `);
+
+  // Migration: Add input_tokens and output_tokens columns if they don't exist
+  try {
+    const columns = db.prepare("PRAGMA table_info(token_usage)").all() as Array<{ name: string }>;
+    const columnNames = columns.map(c => c.name);
+
+    if (!columnNames.includes('input_tokens')) {
+      db.exec('ALTER TABLE token_usage ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!columnNames.includes('output_tokens')) {
+      db.exec('ALTER TABLE token_usage ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0');
+    }
+  } catch {
+    // Ignore migration errors (columns may already exist)
+  }
 
   return db;
 }

@@ -1,4 +1,5 @@
 import type { CodeImpactEngine } from '../core/engine.js';
+import { countTokens, countObjectTokens } from '../utils/token-counter.js';
 
 export interface ToolDefinition {
   name: string;
@@ -2502,9 +2503,10 @@ export async function handleToolCall(
         message: `Risk: ${result.riskScore}/100 (${result.riskLevel.toUpperCase()}). ${result.totalAffected} files affected. ${result.recommendation}`
       };
 
-      // Track token usage
-      const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
-      engine.recordTokenUsage('memory_blast_radius', tokensUsed);
+      // Track token usage (input = file path, output = response)
+      const inputTokens = countTokens(file);
+      const outputTokens = countObjectTokens(response);
+      engine.recordTokenUsage('memory_blast_radius', inputTokens, outputTokens);
 
       return response;
     }

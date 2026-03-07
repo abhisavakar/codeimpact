@@ -11,15 +11,7 @@ import type { MemoryQueryInput, MemoryQueryResponse, MemoryQueryAction } from '.
 import { detectQueryAction, parseQuery, isFilePath } from './router.js';
 import { aggregateQueryResults, mergeSearchResults } from './aggregator.js';
 import { formatTimeAgo } from '../../utils/time.js';
-
-/**
- * Estimate token count from response size.
- * Rough estimate: 1 token ≈ 4 characters
- */
-function estimateTokens(response: MemoryQueryResponse): number {
-  const json = JSON.stringify(response);
-  return Math.ceil(json.length / 4);
-}
+import { countTokens, countObjectTokens } from '../../utils/token-counter.js';
 
 /**
  * Handle a memory_query gateway call
@@ -77,9 +69,10 @@ export async function handleMemoryQuery(
       break;
   }
 
-  // Track token usage for stats
-  const tokensUsed = estimateTokens(response);
-  engine.recordTokenUsage(`memory_query:${action}`, tokensUsed);
+  // Track token usage for stats (input = query, output = response)
+  const inputTokens = countTokens(input.query || '');
+  const outputTokens = countObjectTokens(response);
+  engine.recordTokenUsage(`memory_query:${action}`, inputTokens, outputTokens);
 
   return response;
 }

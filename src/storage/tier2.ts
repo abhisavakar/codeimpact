@@ -1209,18 +1209,20 @@ export class Tier2Storage {
   // ==================== Token Usage Tracking ====================
 
   /**
-   * Record a token usage event.
+   * Record a token usage event with input/output breakdown.
    */
   recordTokenUsage(
     queryType: string,
     tokensUsed: number,
-    costDollars: number = 0
+    costDollars: number = 0,
+    inputTokens: number = 0,
+    outputTokens: number = 0
   ): void {
     const stmt = this.db.prepare(`
-      INSERT INTO token_usage (query_type, tokens_used, cost_dollars)
-      VALUES (?, ?, ?)
+      INSERT INTO token_usage (query_type, tokens_used, cost_dollars, input_tokens, output_tokens)
+      VALUES (?, ?, ?, ?, ?)
     `);
-    stmt.run(queryType, tokensUsed, costDollars);
+    stmt.run(queryType, tokensUsed, costDollars, inputTokens, outputTokens);
   }
 
   /**
@@ -1332,6 +1334,59 @@ export class Tier2Storage {
       queries: number;
       tokensUsed: number;
       costDollars: number;
+    }>;
+  }
+
+  /**
+   * Get recent token usage events for live activity log.
+   * Used by `codeimpact tail` command.
+   */
+  getRecentUsageEvents(limit: number = 50, sinceTimestamp?: number): Array<{
+    id: number;
+    queryType: string;
+    tokensUsed: number;
+    costDollars: number;
+    inputTokens: number;
+    outputTokens: number;
+    timestamp: number;
+  }> {
+    if (sinceTimestamp !== undefined) {
+      const stmt = this.db.prepare(`
+        SELECT id, query_type as queryType, tokens_used as tokensUsed,
+               cost_dollars as costDollars, input_tokens as inputTokens,
+               output_tokens as outputTokens, timestamp
+        FROM token_usage
+        WHERE timestamp > ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+      `);
+      return stmt.all(sinceTimestamp, limit) as Array<{
+        id: number;
+        queryType: string;
+        tokensUsed: number;
+        costDollars: number;
+        inputTokens: number;
+        outputTokens: number;
+        timestamp: number;
+      }>;
+    }
+
+    const stmt = this.db.prepare(`
+      SELECT id, query_type as queryType, tokens_used as tokensUsed,
+             cost_dollars as costDollars, input_tokens as inputTokens,
+             output_tokens as outputTokens, timestamp
+        FROM token_usage
+        ORDER BY timestamp DESC
+        LIMIT ?
+    `);
+    return stmt.all(limit) as Array<{
+      id: number;
+      queryType: string;
+      tokensUsed: number;
+      costDollars: number;
+      inputTokens: number;
+      outputTokens: number;
+      timestamp: number;
     }>;
   }
 }

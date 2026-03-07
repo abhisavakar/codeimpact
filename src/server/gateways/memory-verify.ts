@@ -18,6 +18,7 @@
  */
 
 import type { CodeImpactEngine } from '../../core/engine.js';
+import { countTokens, countObjectTokens } from '../../utils/token-counter.js';
 
 // ============================================================================
 // Types
@@ -280,9 +281,10 @@ export async function handleMemoryVerify(
   response.summary = buildSummary(response);
   response.suggestions = [...new Set(suggestions)].slice(0, 10);
 
-  // Track token usage for stats
-  const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
-  engine.recordTokenUsage('memory_verify', tokensUsed);
+  // Track token usage for stats (input = code, output = response)
+  const inputTokens = countTokens(input.code || '');
+  const outputTokens = countObjectTokens(response);
+  engine.recordTokenUsage('memory_verify', inputTokens, outputTokens);
 
   return response;
 }

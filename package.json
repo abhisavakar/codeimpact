@@ -45,6 +45,7 @@
     "better-sqlite3": "^12.6.2",
     "chokidar": "^4.0.0",
     "glob": "^13.0.0",
+    "gpt-tokenizer": "^3.4.0",
     "tree-sitter-wasms": "^0.1.13",
     "web-tree-sitter": "^0.24.0"
   },

@@ -31,15 +31,20 @@ export interface UsageStats {
 
 /**
  * Pricing constants for cost estimation.
- * Based on Claude API pricing (approximate).
+ * Based on Claude API pricing (March 2024).
  */
 const PRICING = {
-  // Cost per 1K tokens (input + output average)
-  CLAUDE_SONNET_PER_1K: 0.006,  // ~$3/1M input + $15/1M output averaged
-  CLAUDE_OPUS_PER_1K: 0.030,   // ~$15/1M input + $75/1M output averaged
+  // Claude 3.5 Sonnet pricing per 1M tokens
+  SONNET_INPUT_PER_1M: 3.00,
+  SONNET_OUTPUT_PER_1M: 15.00,
 
-  // Default to Sonnet pricing
-  DEFAULT_PER_1K: 0.006,
+  // Claude 3 Opus pricing per 1M tokens
+  OPUS_INPUT_PER_1M: 15.00,
+  OPUS_OUTPUT_PER_1M: 75.00,
+
+  // Default to Sonnet pricing (most common)
+  DEFAULT_INPUT_PER_1M: 3.00,
+  DEFAULT_OUTPUT_PER_1M: 15.00,
 };
 
 /**
@@ -58,15 +63,20 @@ export class CostTracker {
   }
 
   /**
-   * Record a token usage event.
+   * Record a token usage event with input/output breakdown.
    *
    * @param queryType - Type of query (get_context, search, etc.)
-   * @param tokensUsed - Tokens used for this query
+   * @param inputTokens - Tokens in the input/query
+   * @param outputTokens - Tokens in the response
    */
-  recordUsage(queryType: string, tokensUsed: number): void {
-    // Calculate cost
-    const costDollars = (tokensUsed / 1000) * PRICING.DEFAULT_PER_1K;
-    this.tier2.recordTokenUsage(queryType, tokensUsed, costDollars);
+  recordUsage(queryType: string, inputTokens: number, outputTokens: number = 0): void {
+    // Calculate cost with separate input/output pricing
+    const inputCost = (inputTokens / 1_000_000) * PRICING.DEFAULT_INPUT_PER_1M;
+    const outputCost = (outputTokens / 1_000_000) * PRICING.DEFAULT_OUTPUT_PER_1M;
+    const totalCost = inputCost + outputCost;
+    const totalTokens = inputTokens + outputTokens;
+
+    this.tier2.recordTokenUsage(queryType, totalTokens, totalCost, inputTokens, outputTokens);
   }
 
   /**

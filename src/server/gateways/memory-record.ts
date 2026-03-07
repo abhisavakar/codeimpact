@@ -10,6 +10,7 @@
 import type { CodeImpactEngine } from '../../core/engine.js';
 import type { MemoryRecordInput, MemoryRecordResponse } from './types.js';
 import { detectRecordType, validateRecordInput } from './router.js';
+import { countTokens, countObjectTokens } from '../../utils/token-counter.js';
 
 // Patterns that indicate decision-like content
 const DECISION_PATTERNS = [
@@ -163,8 +164,9 @@ export async function handleMemoryRecord(
   }
 
   // Track token usage for stats
-  const tokensUsed = Math.ceil(JSON.stringify(response).length / 4);
-  engine.recordTokenUsage(`memory_record:${recordType}`, tokensUsed);
+  const inputTokens = countTokens(input.content || '');
+  const outputTokens = countObjectTokens(response);
+  engine.recordTokenUsage(`memory_record:${recordType}`, inputTokens, outputTokens);
 
   return response;
 }

@@ -1917,10 +1917,14 @@ export class CodeImpactEngine {
   /**
    * Record token usage for a query.
    * Call this after each query to track usage.
+   *
+   * @param queryType - Type of query (e.g., "memory_query:context")
+   * @param inputTokens - Tokens in the input/query
+   * @param outputTokens - Tokens in the response
    */
-  recordTokenUsage(queryType: string, tokensUsed: number): void {
+  recordTokenUsage(queryType: string, inputTokens: number, outputTokens: number = 0): void {
     const tracker = new CostTracker(this.tier2);
-    tracker.recordUsage(queryType, tokensUsed);
+    tracker.recordUsage(queryType, inputTokens, outputTokens);
   }
 
   /**

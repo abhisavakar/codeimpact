@@ -40,7 +40,7 @@ export class MCPServer {
   }
 
   private setupHandlers(): void {
-    // List available tools - now using gateway pattern (12 tools instead of 51)
+    // List available tools - now using gateway pattern (13 tools instead of 51)
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
         tools: allToolDefinitions.map(t => ({
