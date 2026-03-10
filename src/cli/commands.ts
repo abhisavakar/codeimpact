@@ -935,8 +935,8 @@ function configureProjectMCP(
   const isWindows = process.platform === 'win32';
   
   // Use absolute path to the compiled JS file to avoid cmd wrappers stalling MCP stdin/stdout streams
-  const __dirname = new URL('.', import.meta.url).pathname;
-  const resolvedPath = resolve(isWindows ? __dirname.substring(1) : __dirname, 'index.js');
+  const __dirname = fileURLToPath(new URL('.', import.meta.url));
+  const resolvedPath = resolve(__dirname, 'index.js');
   
   if (isWindows) {
     config.mcpServers['codeimpact'] = { 
