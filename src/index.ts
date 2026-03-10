@@ -1,5 +1,6 @@
 import { MCPServer } from './server/mcp.js';
 import { HTTPServer } from './server/http.js';
+import { RemoteMCPServer } from './server/remote-mcp.js';
 import { getDefaultConfig, parseArgs } from './utils/config.js';
 import { executeCLI, printHelp } from './cli/commands.js';
 
@@ -27,7 +28,7 @@ async function main(): Promise<void> {
 
   // Check for CLI commands first
   const firstArg = args[0];
-  const cliCommands = ['init', 'projects', 'export', 'deadcode', 'test-impact', 'impact', 'stats', 'analytics', 'tail', 'reindex', 'help', '--help', '-h'];
+  const cliCommands = ['init', 'projects', 'export', 'deadcode', 'test-impact', 'impact', 'stats', 'analytics', 'tail', 'reindex', 'serve-mcp', 'help', '--help', '-h'];
 
   if (firstArg && cliCommands.includes(firstArg)) {
     // Handle CLI commands
@@ -50,6 +51,19 @@ async function main(): Promise<void> {
       await server.start();
     } catch (error) {
       console.error('Failed to start HTTP server:', error);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Handle serve-mcp command - start remote MCP server (multi-project, multi-client)
+  if (firstArg === 'serve-mcp') {
+    const { port } = parseServeArgs(args.slice(1));
+    const server = new RemoteMCPServer(port);
+    try {
+      await server.start();
+    } catch (error) {
+      console.error('Failed to start remote MCP server:', error);
       process.exit(1);
     }
     return;

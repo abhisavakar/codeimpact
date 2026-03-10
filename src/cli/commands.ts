@@ -1112,8 +1112,8 @@ function configureCursorProjectMCP(
   const isWindows = process.platform === 'win32';
 
   // Use absolute path to the compiled JS file
-  const __dirname = new URL('.', import.meta.url).pathname;
-  const resolvedPath = resolve(isWindows ? __dirname.substring(1) : __dirname, 'index.js');
+  const __dirname = fileURLToPath(new URL('.', import.meta.url));
+  const resolvedPath = resolve(__dirname, 'index.js');
 
   if (isWindows) {
     config.mcpServers['codeimpact'] = {
@@ -1275,9 +1275,9 @@ function configureOpenCode(
   const isWindows = process.platform === 'win32';
   
   // Use absolute path to the compiled JS file to avoid cmd wrappers stalling MCP stdin/stdout streams
-  const __dirname = new URL('.', import.meta.url).pathname;
-  const resolvedPath = resolve(isWindows ? __dirname.substring(1) : __dirname, 'index.js');
-  
+  const __dirname = fileURLToPath(new URL('.', import.meta.url));
+  const resolvedPath = resolve(__dirname, 'index.js');
+
   if (isWindows) {
     (config.mcp as Record<string, unknown>)['codeimpact'] = {
       type: 'local',
@@ -1300,8 +1300,35 @@ function configureOpenCode(
   }
 }
 
+// Helper to write a URL-based MCP config entry (for remote server mode)
+function configureRemoteMCPClient(
+  clientName: string,
+  configPath: string,
+  serverName: string,
+  serverUrl: string
+): { success: boolean; message: string } {
+  let config: { mcpServers?: Record<string, unknown> } = { mcpServers: {} };
+  try {
+    if (existsSync(configPath)) {
+      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    }
+  } catch {
+    // start fresh
+  }
+  if (!config.mcpServers) config.mcpServers = {};
+  config.mcpServers[serverName] = { url: serverUrl };
+  try {
+    const dir = configPath.substring(0, configPath.lastIndexOf('/') || configPath.lastIndexOf('\\'));
+    if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    return { success: true, message: `${clientName}: ${configPath}` };
+  } catch (err) {
+    return { success: false, message: `${clientName}: Failed - ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
 // Initialize codeimpact for current project + auto-configure Claude Desktop & OpenCode
-export function initProject(projectPath?: string): CommandResult {
+export function initProject(projectPath?: string, serverUrl?: string): CommandResult {
   const targetPath = projectPath || process.cwd();
 
   // 1. Register the project
@@ -1327,76 +1354,83 @@ export function initProject(projectPath?: string): CommandResult {
     claudeConfigPath = join(homedir(), '.config', 'claude', 'claude_desktop_config.json');
   }
 
-  const claudeResult = configureMCPClient('Claude Desktop', claudeConfigPath, serverName, targetPath);
-  if (claudeResult.success) {
-    configuredClients.push(claudeResult.message);
+  if (serverUrl) {
+    // Remote server mode — write URL-based config to all tools
+    const remoteProjectUrl = `${serverUrl}/mcp?project=${encodeURIComponent(resolve(targetPath))}`;
+
+    const claudeResult = configureRemoteMCPClient('Claude Desktop', claudeConfigPath, serverName, remoteProjectUrl);
+    if (claudeResult.success) configuredClients.push(claudeResult.message);
+    else failedClients.push(claudeResult.message);
+
+    const claudeCodeConfigPath = join(targetPath, '.mcp.json');
+    const claudeCodeResult = configureRemoteMCPClient('Claude Code', claudeCodeConfigPath, 'codeimpact', remoteProjectUrl);
+    if (claudeCodeResult.success) configuredClients.push(claudeCodeResult.message);
+
+    let cursorConfigPath: string;
+    if (platform === 'win32') {
+      cursorConfigPath = join(homedir(), 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
+    } else if (platform === 'darwin') {
+      cursorConfigPath = join(homedir(), 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
+    } else {
+      cursorConfigPath = join(homedir(), '.config', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
+    }
+    const cursorResult = configureRemoteMCPClient('Cursor (global)', cursorConfigPath, serverName, remoteProjectUrl);
+    if (cursorResult.success) configuredClients.push(cursorResult.message);
+
+    configuredClients.push(`Remote server: ${remoteProjectUrl}`);
   } else {
-    failedClients.push(claudeResult.message);
+    // Local mode — spawn a local process
+    const claudeResult = configureMCPClient('Claude Desktop', claudeConfigPath, serverName, targetPath);
+    if (claudeResult.success) configuredClients.push(claudeResult.message);
+    else failedClients.push(claudeResult.message);
+
+    // 3. Configure OpenCode (uses opencode.json with different format)
+    const openCodeResult = configureOpenCode(targetPath);
+    if (openCodeResult.success) configuredClients.push(openCodeResult.message);
+    else failedClients.push(openCodeResult.message);
+
+    // 4. Configure Claude Code (CLI) - use project-local .mcp.json
+    const claudeCodeConfigPath = join(targetPath, '.mcp.json');
+    const claudeCodeResult = configureProjectMCP(claudeCodeConfigPath, targetPath);
+    if (claudeCodeResult.success) configuredClients.push(claudeCodeResult.message);
+
+    // 5. Configure Cursor (both global and project-level)
+    // 5a. Global Cursor MCP config
+    let cursorConfigPath: string;
+    if (platform === 'win32') {
+      cursorConfigPath = join(homedir(), 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
+    } else if (platform === 'darwin') {
+      cursorConfigPath = join(homedir(), 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
+    } else {
+      cursorConfigPath = join(homedir(), '.config', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
+    }
+    const cursorGlobalResult = configureMCPClient('Cursor (global)', cursorConfigPath, serverName, targetPath);
+    if (cursorGlobalResult.success) configuredClients.push(cursorGlobalResult.message);
+
+    // 5b. Project-level Cursor MCP config (.cursor/mcp.json)
+    const cursorProjectResult = configureCursorProjectMCP(targetPath);
+    if (cursorProjectResult.success) configuredClients.push(cursorProjectResult.message);
+    else failedClients.push(cursorProjectResult.message);
+
+    // 5c. Cursor rules file (.cursorrules)
+    const cursorRulesResult = configureCursorRules(targetPath);
+    if (cursorRulesResult.success) configuredClients.push(cursorRulesResult.message);
+    else failedClients.push(cursorRulesResult.message);
   }
 
-  // 3. Configure OpenCode (uses opencode.json with different format)
-  const openCodeResult = configureOpenCode(targetPath);
-  if (openCodeResult.success) {
-    configuredClients.push(openCodeResult.message);
-  } else {
-    failedClients.push(openCodeResult.message);
-  }
-
-  // 4. Configure Claude Code (CLI) - use project-local .mcp.json
-  // This ensures only the current project's CodeImpact connects
-  const claudeCodeConfigPath = join(targetPath, '.mcp.json');
-  const claudeCodeResult = configureProjectMCP(claudeCodeConfigPath, targetPath);
-  if (claudeCodeResult.success) {
-    configuredClients.push(claudeCodeResult.message);
-  }
-
-  // 5. Configure Cursor (both global and project-level)
-  // 5a. Global Cursor MCP config
-  let cursorConfigPath: string;
-  if (platform === 'win32') {
-    cursorConfigPath = join(homedir(), 'AppData', 'Roaming', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
-  } else if (platform === 'darwin') {
-    cursorConfigPath = join(homedir(), 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
-  } else {
-    cursorConfigPath = join(homedir(), '.config', 'Cursor', 'User', 'globalStorage', 'cursor.mcp', 'mcp.json');
-  }
-
-  const cursorGlobalResult = configureMCPClient('Cursor (global)', cursorConfigPath, serverName, targetPath);
-  if (cursorGlobalResult.success) {
-    configuredClients.push(cursorGlobalResult.message);
-  }
-
-  // 5b. Project-level Cursor MCP config (.cursor/mcp.json)
-  const cursorProjectResult = configureCursorProjectMCP(targetPath);
-  if (cursorProjectResult.success) {
-    configuredClients.push(cursorProjectResult.message);
-  } else {
-    failedClients.push(cursorProjectResult.message);
-  }
-
-  // 5c. Cursor rules file (.cursorrules)
-  const cursorRulesResult = configureCursorRules(targetPath);
-  if (cursorRulesResult.success) {
-    configuredClients.push(cursorRulesResult.message);
-  } else {
-    failedClients.push(cursorRulesResult.message);
-  }
-
-  // 6. Configure CLAUDE.md with tool preferences
+  // 6. Configure CLAUDE.md with tool preferences (both modes)
   const claudeMdResult = configureClaudeMD(targetPath);
-  if (claudeMdResult.success) {
-    configuredClients.push(claudeMdResult.message);
-  } else {
-    failedClients.push(claudeMdResult.message);
-  }
+  if (claudeMdResult.success) configuredClients.push(claudeMdResult.message);
+  else failedClients.push(claudeMdResult.message);
 
   // Build result message
+  const modeNote = serverUrl ? `\nMode: Remote server (${serverUrl})` : '';
   let message = `
 CodeImpact initialized!
 
 Project: ${projectInfo.name}
 Path: ${targetPath}
-Data: ${projectInfo.dataDir}
+Data: ${projectInfo.dataDir}${modeNote}
 
 Configured MCP Clients:
 ${configuredClients.map(c => '  ✓ ' + c).join('\n')}
@@ -1529,8 +1563,19 @@ export function executeCLI(args: string[]): void {
       break;
 
     case 'init': {
-      const path = args[1];
-      const result = initProject(path);
+      let projectPath: string | undefined;
+      let serverUrl: string | undefined;
+      for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+        const next = args[i + 1];
+        if ((arg === '--server' || arg === '-s') && next) {
+          serverUrl = next;
+          i++;
+        } else if (!arg.startsWith('-')) {
+          projectPath = arg;
+        }
+      }
+      const result = initProject(projectPath, serverUrl);
       console.log(result.message);
       if (!result.success) process.exit(1);
       break;
