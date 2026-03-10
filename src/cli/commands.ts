@@ -8,6 +8,7 @@ import { TestAwareness } from '../core/test-awareness/index.js';
 import { initializeDatabase } from '../storage/database.js';
 import { Tier2Storage } from '../storage/tier2.js';
 import { join, resolve } from 'path';
+import { fileURLToPath } from 'url';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 
@@ -883,9 +884,8 @@ function configureMCPClient(
   // esbuild bundles everything into dist/index.js.
   // import.meta.url is file:///.../dist/index.js.
   // new URL('.', import.meta.url).pathname is /.../dist/
-  const __dirname = new URL('.', import.meta.url).pathname;
-  // Handle Windows paths from import.meta.url which start with /C:/
-  const resolvedPath = resolve(isWindows ? __dirname.substring(1) : __dirname, 'index.js');
+  const __dirname = fileURLToPath(new URL('.', import.meta.url));
+  const resolvedPath = resolve(__dirname, 'index.js');
   
   if (isWindows) {
     config.mcpServers[serverName] = { 
