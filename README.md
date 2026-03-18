@@ -2,12 +2,12 @@
 
 **Persistent codebase understanding for AI assistants.**
 
-[![npm version](https://img.shields.io/npm/v/codeimpact.svg?style=flat-square)](https://www.npmjs.com/package/codeimpact)
-[![npm downloads](https://img.shields.io/npm/dm/codeimpact.svg?style=flat-square)](https://www.npmjs.com/package/codeimpact)
-[![npm total downloads](https://img.shields.io/npm/dt/codeimpact.svg?style=flat-square)](https://www.npmjs.com/package/codeimpact)
-[![license](https://img.shields.io/npm/l/codeimpact.svg?style=flat-square)](https://github.com/abhisavakar/codeimpact/blob/main/LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-339933.svg?style=flat-square)](https://nodejs.org/)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-blue.svg?style=flat-square)](https://modelcontextprotocol.io/)
+[![NPM Version](https://img.shields.io/npm/v/codeimpact?style=for-the-badge&logo=npm&logoColor=white&color=cb3837)](https://www.npmjs.com/package/codeimpact)
+[![Downloads](https://img.shields.io/npm/dm/codeimpact?style=for-the-badge&logo=npm&logoColor=white&label=downloads/month)](https://www.npmjs.com/package/codeimpact)
+[![Total Downloads](https://img.shields.io/npm/dt/codeimpact?style=for-the-badge&logo=npm&logoColor=white&label=total%20downloads)](https://www.npmjs.com/package/codeimpact)
+[![License](https://img.shields.io/npm/l/codeimpact?style=for-the-badge)](https://github.com/abhisavakar/codeimpact/blob/main/LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-blue?style=for-the-badge)](https://modelcontextprotocol.io/)
 
 ```bash
 npm i codeimpact
