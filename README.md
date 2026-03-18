@@ -2,12 +2,18 @@
 
 **Persistent codebase understanding for AI assistants.**
 
-CodeImpact is an MCP server that indexes your codebase and gives AI assistants like Claude the ability to understand your project's structure, dependencies, and history across sessions.
+[![npm version](https://img.shields.io/npm/v/codeimpact.svg?style=flat-square)](https://www.npmjs.com/package/codeimpact)
+[![npm downloads](https://img.shields.io/npm/dm/codeimpact.svg?style=flat-square)](https://www.npmjs.com/package/codeimpact)
+[![npm total downloads](https://img.shields.io/npm/dt/codeimpact.svg?style=flat-square)](https://www.npmjs.com/package/codeimpact)
+[![license](https://img.shields.io/npm/l/codeimpact.svg?style=flat-square)](https://github.com/abhisavakar/codeimpact/blob/main/LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-339933.svg?style=flat-square)](https://nodejs.org/)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-blue.svg?style=flat-square)](https://modelcontextprotocol.io/)
 
-[![npm version](https://img.shields.io/npm/v/codeimpact.svg)](https://www.npmjs.com/package/codeimpact)
-[![downloads](https://img.shields.io/npm/dt/codeimpact.svg)](https://www.npmjs.com/package/codeimpact)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-339933.svg)](https://nodejs.org/)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-blue.svg)](https://modelcontextprotocol.io/)
+```bash
+npm i codeimpact
+```
+
+CodeImpact is an MCP server that indexes your codebase and gives AI assistants like Claude the ability to understand your project's structure, dependencies, and history across sessions.
 
 ---
 
@@ -31,8 +37,11 @@ All processing happens locally on your machine. No cloud services, no telemetry.
 ## Quick Start
 
 ```bash
-# Install
-npm install -g codeimpact
+# Install globally
+npm i -g codeimpact
+
+# Or use with npx (no install)
+npx codeimpact init
 
 # Initialize in your project
 cd your-project
@@ -326,7 +335,7 @@ Global registry for project listing:
 ## Development
 
 ```bash
-git clone https://github.com/anthropics/codeimpact.git
+git clone https://github.com/abhisavakar/codeimpact.git
 cd codeimpact
 npm install
 npm run build
