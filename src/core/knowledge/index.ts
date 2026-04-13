@@ -1,0 +1,14 @@
+export { KnowledgeOrchestrator } from './orchestrator.js';
+export type { KnowledgeGenerateOptions, KnowledgeGenerateResult } from './orchestrator.js';
+export { ensureKnowledgeWorkspace, readManifest, writeManifest } from './workspace.js';
+export type { KnowledgeManifest, KnowledgeStatus, SkillDefinition, SkillEvolutionEntry } from './workspace.js';
+export { ProviderResearch } from './provider-research.js';
+export { PlatformRuleSync } from './platform-sync.js';
+export { IntelligenceCollector } from './intelligence-collector.js';
+export type { ProjectIntelligence } from './intelligence-collector.js';
+export { SkillReader } from './skill-reader.js';
+export type { SkillLevel0, SkillLevel1, SkillSnippet } from './skill-reader.js';
+export { renderSkillMd, writeSkillMd, getSkillPath } from './skill-generator.js';
+export type { SkillMdInput } from './skill-generator.js';
+export { SkillEvolutionEngine } from './skill-evolution.js';
+export type { SkillPatch, EvolutionResult, SkillUsageSummary } from './skill-evolution.js';

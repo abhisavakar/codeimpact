@@ -27,6 +27,7 @@ import { TestImpactAnalyzer, type TestImpactResult, type AffectedFile } from './
 import { BlastRadiusAnalyzer, type BlastRadiusResult, type RiskLevel } from './blast-radius.js';
 import { CostTracker, type UsageStats, type StatsPeriod } from './cost-tracker.js';
 import { GitStalenessChecker, ActivityGate, GitSyncManager, formatGitChangeInfo, type GitChangeInfo } from './refresh/index.js';
+import { KnowledgeOrchestrator } from './knowledge/index.js';
 import { detectLanguage, getPreview, countLines } from '../utils/files.js';
 import type { CodeImpactConfig, AssembledContext, Decision, ProjectSummary, SearchResult, CodeSymbol, SymbolKind, ActiveFeatureContext, HotContext } from '../types/index.js';
 import type { ArchitectureDoc, ComponentDoc, DailyChangelog, ChangelogOptions, ValidationResult, ActivityResult, UndocumentedItem, ContextHealth, CompactionResult, CompactionOptions, CriticalContext, DriftResult, ConfidenceResult, ConfidenceLevel, ConfidenceSources, ConflictResult, ChangeQueryResult, ChangeQueryOptions, Diagnosis, PastBug, FixSuggestion, Change, Pattern, PatternCategory, PatternValidationResult, ExistingFunction, TestInfo, TestFramework, TestValidationResult, TestUpdate, TestCoverage } from '../types/documentation.js';
@@ -61,6 +62,9 @@ export class CodeImpactEngine {
   private gitStalenessChecker: GitStalenessChecker;
   private gitSyncManager: GitSyncManager;
   private activityGate: ActivityGate;
+  private knowledgeOrchestrator: KnowledgeOrchestrator;
+  private pendingComponentDocPaths = new Set<string>();
+  private componentDocTimer: NodeJS.Timeout | null = null;
   private initialized = false;
   private initializationStatus: 'pending' | 'indexing' | 'ready' | 'error' = 'pending';
   private indexingProgress: { indexed: number; total: number } = { indexed: 0, total: 0 };
@@ -187,6 +191,7 @@ export class CodeImpactEngine {
     this.gitStalenessChecker = new GitStalenessChecker(config.projectPath);
     this.gitSyncManager = new GitSyncManager(config.projectPath);
     this.activityGate = new ActivityGate();
+    this.knowledgeOrchestrator = new KnowledgeOrchestrator(config.projectPath, this);
 
     // Set up git sync manager to detect reverts, resets, branch switches
     this.setupGitSyncManager();
@@ -247,6 +252,12 @@ export class CodeImpactEngine {
       } catch (err) {
         console.error('Test indexing error:', err);
       }
+
+      // Refresh living docs before knowledge generation so skills see fresh data
+      this.refreshLivingDocsAndKnowledge().catch((err) => {
+        console.error('Living docs refresh error:', err);
+        this.knowledgeOrchestrator.schedule('indexing_complete');
+      });
     });
 
     this.indexer.on('fileIndexed', (path) => {
@@ -255,6 +266,17 @@ export class CodeImpactEngine {
 
       // Invalidate cached summary when file changes (event-driven, not polling)
       this.summarizer.invalidateSummaryByPath(path);
+      this.knowledgeOrchestrator.schedule('file_indexed', [path]);
+
+      this.pendingComponentDocPaths.add(path);
+      if (this.componentDocTimer) clearTimeout(this.componentDocTimer);
+      this.componentDocTimer = setTimeout(() => {
+        this.batchGenerateComponentDocs(Array.from(this.pendingComponentDocPaths)).catch((err) => {
+          console.error('[ComponentDocs] batch generation error:', err);
+        });
+        this.pendingComponentDocPaths.clear();
+        this.componentDocTimer = null;
+      }, 2000);
     });
 
     this.indexer.on('fileImpact', (impact: { file: string; affectedFiles: string[]; affectedCount: number }) => {
@@ -285,6 +307,7 @@ export class CodeImpactEngine {
     // Handle git state changes
     this.gitSyncManager.onGitChange(async (change: GitChangeInfo) => {
       console.error(formatGitChangeInfo(change));
+      this.knowledgeOrchestrator.schedule(`git_${change.type}`, change.changedFiles);
 
       switch (change.type) {
         case 'history_rewrite':
@@ -441,6 +464,9 @@ export class CodeImpactEngine {
       // Start idle monitoring
       this.activityGate.startIdleMonitoring(10_000);
 
+      // Build initial knowledge workspace on startup.
+      await this.knowledgeOrchestrator.generate({ reason: 'engine_initialize' });
+
       this.initialized = true;
       this.initializationStatus = 'ready';
       console.error('CodeImpact initialized');
@@ -454,6 +480,85 @@ export class CodeImpactEngine {
    * Get the current engine status for visibility
    * Shows database file count when not actively indexing (fixes 0/537 display bug)
    */
+  getProjectPath(): string {
+    return this.config.projectPath;
+  }
+
+  getDatabase(): import('better-sqlite3').Database {
+    return this.db;
+  }
+
+  private async refreshLivingDocsAndKnowledge(): Promise<void> {
+    try {
+      const [archDoc, changelog] = await Promise.all([
+        this.livingDocs.generateArchitectureDocs().catch(() => null),
+        this.livingDocs.generateChangelog({}).catch(() => null),
+      ]);
+
+      const componentDocs = await this.generateCriticalComponentDocs();
+
+      this.knowledgeOrchestrator.generate({
+        reason: 'indexing_complete',
+        architecture: archDoc ?? undefined,
+        changelog: changelog ?? undefined,
+        componentDocs: componentDocs.length > 0 ? componentDocs : undefined,
+      });
+    } catch {
+      this.knowledgeOrchestrator.schedule('indexing_complete');
+    }
+  }
+
+  private async generateCriticalComponentDocs(): Promise<import('../types/documentation.js').ComponentDoc[]> {
+    try {
+      const topFiles = this.db.prepare(`
+        SELECT f.path, COUNT(d.id) as dep_count
+        FROM files f
+        LEFT JOIN dependencies d ON d.target_file_id = f.id
+        WHERE f.language IS NOT NULL
+        GROUP BY f.id
+        ORDER BY dep_count DESC
+        LIMIT 20
+      `).all() as Array<{ path: string; dep_count: number }>;
+
+      if (topFiles.length === 0) return [];
+
+      const docs: import('../types/documentation.js').ComponentDoc[] = [];
+      for (const file of topFiles) {
+        try {
+          const doc = await this.livingDocs.generateComponentDoc(file.path);
+          docs.push(doc);
+        } catch {
+          // skip files that fail
+        }
+      }
+      console.error(`[ComponentDocs] first-connect: generated ${docs.length} component docs for top files`);
+      return docs;
+    } catch {
+      return [];
+    }
+  }
+
+  private async batchGenerateComponentDocs(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    const capped = paths.slice(0, 10);
+    const docs: import('../types/documentation.js').ComponentDoc[] = [];
+    for (const p of capped) {
+      try {
+        const doc = await this.livingDocs.generateComponentDoc(p);
+        docs.push(doc);
+      } catch {
+        // skip
+      }
+    }
+    if (docs.length > 0) {
+      this.knowledgeOrchestrator.generate({
+        reason: 'component_docs_refresh',
+        componentDocs: docs,
+      });
+      console.error(`[ComponentDocs] refreshed ${docs.length} component doc(s)`);
+    }
+  }
+
   getEngineStatus(): { status: string; ready: boolean; indexing: { indexed: number; total: number } } {
     // When not actively indexing, show actual database counts instead of runtime counter
     // This fixes the misleading "0/537" display after server restart
@@ -1317,6 +1422,306 @@ export class CodeImpactEngine {
     type?: 'file' | 'function' | 'class' | 'interface' | 'all';
   }): Promise<UndocumentedItem[]> {
     return this.livingDocs.findUndocumented(options);
+  }
+
+  getCachedArchitectureDoc(): any | null {
+    try {
+      const row = this.db.prepare(
+        `SELECT content FROM documentation WHERE file_id = 0 AND doc_type = 'architecture' ORDER BY generated_at DESC LIMIT 1`,
+      ).get() as { content: string } | undefined;
+      if (!row) return null;
+      return JSON.parse(row.content);
+    } catch {
+      return null;
+    }
+  }
+
+  getCachedDocValidation(): { score: number; outdatedDocs: any[]; undocumentedCode: any[] } | null {
+    try {
+      const row = this.db.prepare(
+        `SELECT content FROM documentation WHERE file_id = 0 AND doc_type = 'validation' ORDER BY generated_at DESC LIMIT 1`,
+      ).get() as { content: string } | undefined;
+      if (row) return JSON.parse(row.content);
+
+      const allDocs = this.db.prepare(
+        `SELECT COUNT(*) as total FROM documentation WHERE doc_type != 'validation'`,
+      ).get() as { total: number };
+      const totalDocs = allDocs?.total ?? 0;
+      if (totalDocs === 0) return null;
+
+      return { score: 50, outdatedDocs: [], undocumentedCode: [] };
+    } catch {
+      return null;
+    }
+  }
+
+  getTopImportedModules(modulePattern: string, limit = 5): string[] {
+    try {
+      const rows = this.db.prepare(`
+        SELECT DISTINCT f.path
+        FROM files f
+        JOIN imports i ON i.file_id = f.id
+        WHERE i.imported_from LIKE ?
+        ORDER BY f.path
+        LIMIT ?
+      `).all(`%${modulePattern}%`, limit) as Array<{ path: string }>;
+      return rows.map((r) => r.path);
+    } catch {
+      return [];
+    }
+  }
+
+  getCachedChangelog(): any[] | null {
+    try {
+      const row = this.db.prepare(
+        `SELECT content FROM documentation WHERE file_id = 0 AND doc_type = 'changelog' ORDER BY generated_at DESC LIMIT 1`,
+      ).get() as { content: string } | undefined;
+      if (row) return JSON.parse(row.content);
+
+      const recentChanges = this.changeIntelligence.getRecentChanges(168);
+      if (recentChanges.length === 0) return null;
+
+      const byDate = new Map<string, any[]>();
+      for (const c of recentChanges) {
+        const dateStr = c.timestamp instanceof Date
+          ? c.timestamp.toISOString().split('T')[0]!
+          : String(c.timestamp).split('T')[0]!;
+        const existing = byDate.get(dateStr);
+        if (existing) {
+          existing.push(c);
+        } else {
+          byDate.set(dateStr, [c]);
+        }
+      }
+
+      return Array.from(byDate.entries()).slice(0, 7).map(([date, changes]) => ({
+        date: new Date(date),
+        summary: `${changes.length} changes`,
+        features: [],
+        fixes: [],
+        refactors: changes.map((c: any) => ({
+          description: c.type || 'change',
+          files: [c.file],
+        })),
+      }));
+    } catch {
+      return null;
+    }
+  }
+
+  // ========== Skill Evolution ==========
+
+  logSkillUsage(entry: {
+    skillId: string;
+    toolName: string;
+    filePath?: string;
+    outcome: string;
+    constraintTriggered?: string;
+    pitfallTriggered?: string;
+    verdict?: string;
+    scoreDelta?: number;
+  }): void {
+    try {
+      this.db.prepare(`
+        INSERT INTO skill_usage_log (skill_id, tool_name, file_path, outcome, constraint_triggered, pitfall_triggered, verdict, score_delta)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        entry.skillId,
+        entry.toolName,
+        entry.filePath || null,
+        entry.outcome,
+        entry.constraintTriggered || null,
+        entry.pitfallTriggered || null,
+        entry.verdict || null,
+        entry.scoreDelta || 0,
+      );
+    } catch {
+      // non-critical
+    }
+  }
+
+  getSkillUsageStats(skillId?: string, sinceDays = 30): Array<{
+    skill_id: string;
+    usage_count: number;
+    constraint_hits: number;
+    pitfall_hits: number;
+    avg_score_delta: number;
+    last_used: string;
+    outcomes: Record<string, number>;
+  }> {
+    try {
+      const since = Math.floor(Date.now() / 1000) - sinceDays * 86400;
+      const query = skillId
+        ? `SELECT skill_id, outcome, constraint_triggered, pitfall_triggered, score_delta, timestamp
+           FROM skill_usage_log WHERE skill_id = ? AND timestamp > ? ORDER BY timestamp DESC`
+        : `SELECT skill_id, outcome, constraint_triggered, pitfall_triggered, score_delta, timestamp
+           FROM skill_usage_log WHERE timestamp > ? ORDER BY timestamp DESC`;
+
+      const rows = (skillId
+        ? this.db.prepare(query).all(skillId, since)
+        : this.db.prepare(query).all(since)) as Array<{
+        skill_id: string;
+        outcome: string;
+        constraint_triggered: string | null;
+        pitfall_triggered: string | null;
+        score_delta: number;
+        timestamp: number;
+      }>;
+
+      const bySkill = new Map<string, typeof rows>();
+      for (const row of rows) {
+        const existing = bySkill.get(row.skill_id) || [];
+        existing.push(row);
+        bySkill.set(row.skill_id, existing);
+      }
+
+      return Array.from(bySkill.entries()).map(([id, entries]) => {
+        const outcomes: Record<string, number> = {};
+        let constraintHits = 0;
+        let pitfallHits = 0;
+        let totalDelta = 0;
+        for (const e of entries) {
+          outcomes[e.outcome] = (outcomes[e.outcome] || 0) + 1;
+          if (e.constraint_triggered) constraintHits++;
+          if (e.pitfall_triggered) pitfallHits++;
+          totalDelta += e.score_delta;
+        }
+        return {
+          skill_id: id,
+          usage_count: entries.length,
+          constraint_hits: constraintHits,
+          pitfall_hits: pitfallHits,
+          avg_score_delta: entries.length > 0 ? Math.round(totalDelta / entries.length) : 0,
+          last_used: entries[0] ? new Date(entries[0].timestamp * 1000).toISOString() : 'never',
+          outcomes,
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  logSkillEvolution(entry: {
+    skillId: string;
+    action: string;
+    section: string;
+    content: string;
+    reason: string;
+  }): void {
+    try {
+      this.db.prepare(`
+        INSERT INTO skill_evolution_history (skill_id, action, section, content, reason)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(entry.skillId, entry.action, entry.section, entry.content, entry.reason);
+    } catch {
+      // non-critical
+    }
+  }
+
+  getSkillEvolutionHistory(skillId?: string, limit = 20): Array<{
+    skill_id: string;
+    action: string;
+    section: string;
+    content: string;
+    reason: string;
+    timestamp: string;
+  }> {
+    try {
+      const query = skillId
+        ? `SELECT skill_id, action, section, content, reason, timestamp FROM skill_evolution_history WHERE skill_id = ? ORDER BY timestamp DESC LIMIT ?`
+        : `SELECT skill_id, action, section, content, reason, timestamp FROM skill_evolution_history ORDER BY timestamp DESC LIMIT ?`;
+      const rows = (skillId
+        ? this.db.prepare(query).all(skillId, limit)
+        : this.db.prepare(query).all(limit)) as Array<{
+        skill_id: string; action: string; section: string; content: string; reason: string; timestamp: number;
+      }>;
+      return rows.map((r) => ({
+        ...r,
+        timestamp: new Date(r.timestamp * 1000).toISOString(),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  getToolCallCount(): number {
+    try {
+      const row = this.db.prepare(
+        `SELECT COUNT(*) as cnt FROM skill_usage_log`,
+      ).get() as { cnt: number } | undefined;
+      return row?.cnt ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  // ========== Knowledge Workspace ==========
+
+  getKnowledgeStatus(): { generatedAt: string; skillCount: number; docCount: number; providerCount: number; workspaceRoot: string } {
+    return this.knowledgeOrchestrator.getStatus();
+  }
+
+  async generateKnowledge(options?: {
+    reason?: string;
+    changedFiles?: string[];
+    dryRun?: boolean;
+  }): Promise<{
+    generated_at: string;
+    reason: string;
+    skills: number;
+    docs: number;
+    providers: number;
+    synced_rules: number;
+  }> {
+    const [archDoc, changelog] = await Promise.all([
+      this.livingDocs.generateArchitectureDocs().catch(() => null),
+      this.livingDocs.generateChangelog({}).catch(() => null),
+    ]);
+
+    const result = await this.knowledgeOrchestrator.generate({
+      reason: options?.reason,
+      changedFiles: options?.changedFiles,
+      dryRun: options?.dryRun,
+      architecture: archDoc ?? undefined,
+      changelog: changelog ?? undefined,
+    });
+    return {
+      generated_at: result.manifest.generatedAt,
+      reason: result.manifest.generatedFrom.reason,
+      skills: result.manifest.skills.length,
+      docs: result.manifest.docs.length,
+      providers: result.manifest.providers.length,
+      synced_rules: result.syncedRules.filter((r) => r.updated).length,
+    };
+  }
+
+  syncKnowledgeRules(dryRun = false): {
+    total: number;
+    updated: number;
+    details: Array<{ path: string; mode: 'created' | 'updated' | 'noop' }>;
+  } {
+    const results = this.knowledgeOrchestrator.syncRulesOnly(dryRun);
+    return {
+      total: results.length,
+      updated: results.filter((r) => r.updated).length,
+      details: results.map((r) => ({ path: r.path, mode: r.mode })),
+    };
+  }
+
+  refreshKnowledgeResearch(topics?: string[], dryRun = false): {
+    refreshed: number;
+    entries: Array<{ provider: string; topic: string; fetchedAt: string; sourceUrl: string }>;
+  } {
+    const results = this.knowledgeOrchestrator.refreshProviderResearch(topics, dryRun);
+    return {
+      refreshed: results.length,
+      entries: results.map((entry) => ({
+        provider: entry.provider,
+        topic: entry.topic,
+        fetchedAt: entry.fetchedAt,
+        sourceUrl: entry.sourceUrl,
+      })),
+    };
   }
 
   // ========== Phase 7: Context Rot Prevention ==========

@@ -20,6 +20,8 @@ import {
   type ExistingFunctionResult,
 } from './aggregator.js';
 import { countTokens, countObjectTokens } from '../../utils/token-counter.js';
+import { SkillReader } from '../../core/knowledge/skill-reader.js';
+import { appendNudgeToResponse } from './nudge.js';
 
 /**
  * Handle a memory_review gateway call
@@ -223,6 +225,96 @@ async function handleFullReview(
       file: b.file,
     }));
   }
+
+  // Add skill constraints as additional review criteria — and affect risk_score
+  try {
+    const skillReader = new SkillReader(engine.getProjectPath());
+    const relevantSkills = input.file
+      ? skillReader.findSkillsForFile(input.file)
+      : [];
+    const constraints = relevantSkills.length > 0
+      ? relevantSkills.flatMap((s) => {
+          const rulesMatch = s.content.match(/## Rules\n([\s\S]*?)(?:\n## |$)/);
+          if (!rulesMatch || !rulesMatch[1]) return [];
+          return rulesMatch[1].split('\n').filter((l) => l.startsWith('- ')).map((l) => `[${s.id}] ${l.slice(2)}`);
+        })
+      : skillReader.getSkillConstraints().slice(0, 5);
+
+    if (constraints.length > 0) {
+      (response as MemoryReviewResponse & { skill_constraints?: string[] }).skill_constraints = constraints.slice(0, 10);
+      sourcesUsed.push('knowledge_skills');
+
+      const codeToCheck = (input.code || '').toLowerCase();
+      if (codeToCheck.length > 0) {
+        let violationPenalty = 0;
+        const violatedConstraints: string[] = [];
+
+        for (const constraint of constraints) {
+          const cleanConstraint = constraint.replace(/^\[.*?\]\s*/, '');
+
+          const severityMatch = constraint.match(/\/(critical|warning|info)\]/);
+          const severity = severityMatch ? severityMatch[1] : 'warning';
+
+          const keywords = cleanConstraint
+            .replace(/[^a-zA-Z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter((w) => w.length > 4);
+
+          const negativeIndicators = ['avoid', 'never', 'don\'t', 'must not', 'do not', 'prohibit'];
+          const isNegativeConstraint = negativeIndicators.some((neg) => cleanConstraint.toLowerCase().includes(neg));
+
+          if (isNegativeConstraint) {
+            const actionKeywords = keywords.filter(
+              (w) => !negativeIndicators.some((neg) => neg.includes(w.toLowerCase())),
+            );
+            const violates = actionKeywords.some((kw) => codeToCheck.includes(kw.toLowerCase()));
+            if (violates) {
+              const penalty = severity === 'critical' ? 10 : severity === 'warning' ? 5 : 2;
+              violationPenalty += penalty;
+              violatedConstraints.push(constraint);
+            }
+          }
+        }
+
+        if (violationPenalty > 0) {
+          response.risk_score = Math.min(100, response.risk_score + violationPenalty);
+          if (response.risk_score >= 70) {
+            response.verdict = 'reject';
+          } else if (response.risk_score >= 30 && response.verdict === 'approve') {
+            response.verdict = 'warning';
+          }
+          (response as any).skill_violations = violatedConstraints;
+        }
+      }
+
+    }
+    for (const skill of relevantSkills) {
+      try {
+        const violations = (response as any).skill_violations;
+        engine.logSkillUsage({
+          skillId: skill.id,
+          toolName: 'memory_review',
+          filePath: input.file,
+          outcome: response.verdict,
+          constraintTriggered: violations?.length > 0
+            ? violations.slice(0, 3).join('; ')
+            : undefined,
+          verdict: response.verdict,
+          scoreDelta: response.risk_score,
+        });
+      } catch {
+        // non-critical
+      }
+    }
+  } catch {
+    // skill reader may not be available
+  }
+
+  appendNudgeToResponse(response, engine, 'memory_review', {
+    verdict: response.verdict,
+    riskScore: response.risk_score,
+    filePath: input.file,
+  });
 
   return response;
 }

@@ -12,6 +12,7 @@ import { detectQueryAction, parseQuery, isFilePath } from './router.js';
 import { aggregateQueryResults, mergeSearchResults } from './aggregator.js';
 import { formatTimeAgo } from '../../utils/time.js';
 import { countTokens, countObjectTokens } from '../../utils/token-counter.js';
+import { SkillReader } from '../../core/knowledge/skill-reader.js';
 
 /**
  * Handle a memory_query gateway call
@@ -155,6 +156,33 @@ async function handleContextQuery(
       reasoning: confidence.reasoning,
       indicator: engine.getConfidenceIndicator(confidence.confidence),
     };
+  }
+
+  // Add relevant skill knowledge if available
+  try {
+    const skillReader = new SkillReader(engine.getProjectPath());
+    const queryLower = input.query.toLowerCase();
+    const allSkills = skillReader.readAllSkills();
+    const relevant = allSkills
+      .filter((s) => {
+        const contentLower = s.content.toLowerCase();
+        const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 3);
+        return queryWords.some((w) => contentLower.includes(w));
+      })
+      .slice(0, 3);
+
+    if (relevant.length > 0) {
+      (response as MemoryQueryResponse & { skill_context?: unknown }).skill_context = {
+        matched_skills: relevant.map((s) => ({
+          id: s.id,
+          scope: s.scope,
+          summary: s.content.match(/## What\n(.*)/)?.[1]?.trim().slice(0, 100) || s.id,
+        })),
+      };
+      sourcesUsed.push('knowledge_skills');
+    }
+  } catch {
+    // skill reader may not be available
   }
 
   // Record query for future déjà vu detection

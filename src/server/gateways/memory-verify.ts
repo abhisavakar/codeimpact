@@ -19,6 +19,8 @@
 
 import type { CodeImpactEngine } from '../../core/engine.js';
 import { countTokens, countObjectTokens } from '../../utils/token-counter.js';
+import { SkillReader } from '../../core/knowledge/skill-reader.js';
+import { appendNudgeToResponse } from './nudge.js';
 
 // ============================================================================
 // Types
@@ -275,6 +277,73 @@ export async function handleMemoryVerify(
     ));
   }
 
+  // Add skill verification checks — and affect scoring
+  try {
+    const skillReader = new SkillReader(engine.getProjectPath());
+    const relevantSkills = input.file
+      ? skillReader.findSkillsForFile(input.file)
+      : [];
+    const verifications = relevantSkills.length > 0
+      ? relevantSkills.flatMap((s) => {
+          const match = s.content.match(/## Verify\n([\s\S]*?)(?:\n## |$)/);
+          if (!match || !match[1]) return [];
+          return match[1].split('\n').filter((l) => l.startsWith('- ')).map((l) => `[${s.id}] ${l.slice(2)}`);
+        })
+      : skillReader.getSkillVerifications().slice(0, 5);
+
+    if (verifications.length > 0) {
+      (response as MemoryVerifyResponse & { skill_checks?: string[] }).skill_checks = verifications.slice(0, 10);
+      sourcesUsed.push('knowledge_skills');
+
+      const codeToCheck = (input.code || '').toLowerCase();
+      if (codeToCheck.length > 0 && relevantSkills.length > 0) {
+        const watchOutItems: string[] = [];
+        for (const s of relevantSkills) {
+          const pitfallMatch = s.content.match(/## Watch Out\n([\s\S]*?)(?:\n## |$)/);
+          if (pitfallMatch && pitfallMatch[1]) {
+            watchOutItems.push(
+              ...pitfallMatch[1].split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2)),
+            );
+          }
+        }
+
+        let skillPenalty = 0;
+        for (const pitfall of watchOutItems) {
+          const keywords = pitfall
+            .replace(/[^a-zA-Z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter((w) => w.length > 4);
+          const triggered = keywords.some((kw) => codeToCheck.includes(kw.toLowerCase()));
+          if (triggered) {
+            skillPenalty += 5;
+            suggestions.push(`Skill warning: ${pitfall}`);
+          }
+        }
+
+        if (skillPenalty > 0) {
+          totalScore -= Math.min(skillPenalty, 20);
+        }
+      }
+
+    }
+    for (const skill of relevantSkills) {
+      try {
+        engine.logSkillUsage({
+          skillId: skill.id,
+          toolName: 'memory_verify',
+          filePath: input.file,
+          outcome: totalScore >= 70 ? 'pass' : totalScore >= 40 ? 'warning' : 'fail',
+          verdict: totalScore >= 70 ? 'pass' : totalScore >= 40 ? 'warning' : 'fail',
+          scoreDelta: 0,
+        });
+      } catch {
+        // non-critical
+      }
+    }
+  } catch {
+    // skill reader may not be available
+  }
+
   // Calculate final verdict
   response.score = Math.max(0, Math.min(100, totalScore));
   response.verdict = calculateVerdict(response);
@@ -285,6 +354,10 @@ export async function handleMemoryVerify(
   const inputTokens = countTokens(input.code || '');
   const outputTokens = countObjectTokens(response);
   engine.recordTokenUsage('memory_verify', inputTokens, outputTokens);
+
+  appendNudgeToResponse(response, engine, 'memory_verify', {
+    verdict: response.verdict,
+  });
 
   return response;
 }

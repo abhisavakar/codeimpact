@@ -11,6 +11,8 @@ import type { MemoryStatusInput, MemoryStatusResponse, MemoryStatusAction } from
 import { detectStatusAction, getStatusGathers } from './router.js';
 import { aggregateStatusResults } from './aggregator.js';
 import { countObjectTokens } from '../../utils/token-counter.js';
+import { SkillReader } from '../../core/knowledge/skill-reader.js';
+import { IntelligenceCollector } from '../../core/knowledge/intelligence-collector.js';
 
 /**
  * Handle a memory_status gateway call
@@ -146,6 +148,56 @@ async function handleProjectSummary(
       suggested_actions: resurrection.suggestedActions,
       time_since_last_active: resurrection.timeSinceLastActive,
     };
+  }
+
+  try {
+    const knowledgeStatus = engine.getKnowledgeStatus();
+    const skillReader = new SkillReader(engine.getProjectPath());
+    const existingSkills = skillReader.readLevel0();
+    (response as MemoryStatusResponse & { knowledge?: unknown }).knowledge = {
+      generated_at: knowledgeStatus.generatedAt,
+      skill_count: existingSkills.length,
+      doc_count: knowledgeStatus.docCount,
+      provider_count: knowledgeStatus.providerCount,
+      skills: existingSkills.slice(0, 20).map((s) => ({
+        name: s.name,
+        description: s.description,
+        scope: s.scope,
+      })),
+    };
+    sourcesUsed.push('knowledge_skills');
+
+    try {
+      const collector = new IntelligenceCollector(engine);
+      const intel = collector.collect();
+      const slugify = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const skillNames = new Set(existingSkills.map((s) => slugify(s.name)));
+
+      const uncoveredTechs = intel.detectedTechnologies
+        .filter((t) => !skillNames.has(slugify(t.name)) && !skillNames.has(slugify(t.name + '-patterns')) && !skillNames.has(slugify(t.name + '-integration')))
+        .slice(0, 5)
+        .map((t) => t.name);
+
+      const uncoveredRiskFiles = intel.riskFiles
+        .filter((f) => f.riskScore >= 60)
+        .slice(0, 5)
+        .map((f) => ({ file: f.file, risk_score: f.riskScore }));
+
+      if (uncoveredTechs.length > 0 || uncoveredRiskFiles.length > 0) {
+        (response as MemoryStatusResponse & { knowledge_gaps?: unknown }).knowledge_gaps = {
+          uncovered_technologies: uncoveredTechs,
+          high_risk_files_without_skills: uncoveredRiskFiles,
+          suggestion: uncoveredTechs.length > 0
+            ? `No skills exist for: ${uncoveredTechs.join(', ')}. Use memory_evolve(action="create_skill") to capture patterns.`
+            : `${uncoveredRiskFiles.length} high-risk files lack skill coverage. Use memory_evolve(action="create_skill") to document pitfalls.`,
+        };
+        sourcesUsed.push('knowledge_gaps');
+      }
+    } catch {
+      // intelligence collection may fail; non-critical
+    }
+  } catch {
+    // knowledge workspace may not exist yet
   }
 
   return response;

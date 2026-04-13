@@ -481,6 +481,62 @@ export const toolDefinitions: ToolDefinition[] = [
     }
   },
   {
+    name: 'knowledge_status',
+    description: 'Get autonomous knowledge workspace status (skills/docs/providers counts and root path).',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'knowledge_generate',
+    description: 'Generate or refresh knowledge workspace artifacts (skills/docs/rule sync).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          description: 'Reason for generation (optional)'
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'Preview changes without writing files'
+        }
+      }
+    }
+  },
+  {
+    name: 'knowledge_sync_rules',
+    description: 'Sync platform instruction/rule files from knowledge workspace.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dry_run: {
+          type: 'boolean',
+          description: 'Preview changes without writing files'
+        }
+      }
+    }
+  },
+  {
+    name: 'knowledge_research',
+    description: 'Refresh provider research notes used by skills and docs.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topics: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional provider topics (e.g. fastapi, aws, jwt)'
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'Preview research refresh without writing files'
+        }
+      }
+    }
+  },
+  {
     name: 'what_happened',
     description: 'Query recent project activity - commits, file changes, and decisions.',
     inputSchema: {
@@ -962,6 +1018,37 @@ export const toolDefinitions: ToolDefinition[] = [
         }
       },
       required: ['file']
+    }
+  },
+  {
+    name: 'memory_evolve',
+    description: 'AI-driven knowledge building using agentskills.io SKILL.md format. action="create_skill" to write a new SKILL.md (name, description, scope, content). action="improve_skill" to patch or append (skill_id + old_text/new_text, or section + content). action="create_doc" for documentation. action="report_outcome" for feedback. action="list_signals" for uncovered technologies and knowledge gaps. action="get_evolution_status" for stats.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['create_skill', 'improve_skill', 'create_doc', 'report_outcome', 'list_signals', 'get_evolution_status'],
+          description: 'What to do'
+        },
+        name: { type: 'string', description: 'Skill name (slug-friendly) for create_skill' },
+        description: { type: 'string', description: 'One-line description for create_skill' },
+        scope: { type: 'string', enum: ['core', 'technology', 'feature', 'risk'], description: 'Skill scope for create_skill' },
+        content: { type: 'string', description: 'Full SKILL.md body for create_skill, content to append for improve_skill, or markdown for create_doc' },
+        skill_id: { type: 'string', description: 'Skill name to improve or query' },
+        section: { type: 'string', description: 'Section to append to for improve_skill' },
+        old_text: { type: 'string', description: 'Text to replace for improve_skill patch mode' },
+        new_text: { type: 'string', description: 'Replacement text for improve_skill patch mode' },
+        reason: { type: 'string', description: 'Why this change is needed' },
+        outcome: { type: 'string', enum: ['success', 'failure', 'partial'], description: 'Task outcome' },
+        skills_used: { type: 'array', items: { type: 'string' }, description: 'Skill names for report_outcome' },
+        file: { type: 'string', description: 'Source file for create_doc or report_outcome' },
+        feature_name: { type: 'string', description: 'Feature name for create_doc' },
+        doc_type: { type: 'string', enum: ['component', 'feature', 'architecture'], description: 'Doc type for create_doc' },
+        task_description: { type: 'string', description: 'Task description for context' },
+        metadata: { type: 'object', description: 'Optional metadata for create_skill frontmatter' }
+      },
+      required: ['action']
     }
   }
 ];
@@ -1693,6 +1780,57 @@ export async function handleToolCall(
         message: result.isValid
           ? `Documentation score: ${result.score}% - Looking good!`
           : `Documentation score: ${result.score}% - ${result.suggestions.length} suggestions available`
+      };
+    }
+
+    case 'knowledge_status': {
+      const status = engine.getKnowledgeStatus();
+      return {
+        generated_at: status.generatedAt,
+        workspace_root: status.workspaceRoot,
+        skill_count: status.skillCount,
+        doc_count: status.docCount,
+        provider_count: status.providerCount
+      };
+    }
+
+    case 'knowledge_generate': {
+      const reason = args.reason as string | undefined;
+      const dryRun = Boolean(args.dry_run);
+      const result = await engine.generateKnowledge({ reason, dryRun });
+      return {
+        success: true,
+        generated_at: result.generated_at,
+        reason: result.reason,
+        skills: result.skills,
+        docs: result.docs,
+        providers: result.providers,
+        synced_rules: result.synced_rules,
+        dry_run: dryRun
+      };
+    }
+
+    case 'knowledge_sync_rules': {
+      const dryRun = Boolean(args.dry_run);
+      const result = engine.syncKnowledgeRules(dryRun);
+      return {
+        success: true,
+        total: result.total,
+        updated: result.updated,
+        details: result.details,
+        dry_run: dryRun
+      };
+    }
+
+    case 'knowledge_research': {
+      const topics = args.topics as string[] | undefined;
+      const dryRun = Boolean(args.dry_run);
+      const result = engine.refreshKnowledgeResearch(topics, dryRun);
+      return {
+        success: true,
+        refreshed: result.refreshed,
+        entries: result.entries,
+        dry_run: dryRun
       };
     }
 
@@ -2509,6 +2647,17 @@ export async function handleToolCall(
       engine.recordTokenUsage('memory_blast_radius', inputTokens, outputTokens);
 
       return response;
+    }
+
+    case 'memory_evolve': {
+      const { handleMemoryEvolve } = await import('./gateways/memory-evolve.js');
+      const result = await handleMemoryEvolve(engine, args as any);
+
+      const inputTokens = countTokens(JSON.stringify(args));
+      const outputTokens = countObjectTokens(result);
+      engine.recordTokenUsage('memory_evolve', inputTokens, outputTokens);
+
+      return result;
     }
 
     default:

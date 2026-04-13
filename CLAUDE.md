@@ -21,6 +21,10 @@ CodeImpact provides intelligent code analysis. **Use these tools FIRST** before 
 4. **At session start:**
    - Run `mcp__codeimpact__memory_status` to get project overview and recent changes
 
+5. **For impact analysis:**
+   - Use `mcp__codeimpact__memory_blast_radius` to analyze risk of changing a file
+   - Shows affected files, critical paths, and recommendations
+
 ### Why Use CodeImpact Tools?
 
 - **Semantic search**: Understands intent, not just keywords
@@ -28,6 +32,7 @@ CodeImpact provides intelligent code analysis. **Use these tools FIRST** before 
 - **Decision memory**: Remembers past architectural decisions
 - **Déjà vu detection**: Surfaces similar past problems you've solved
 - **Import validation**: Catches hallucinated imports before they break builds
+- **Blast radius**: Understand impact and risk before making changes
 
 ### Quick Reference
 
@@ -38,3 +43,25 @@ CodeImpact provides intelligent code analysis. **Use these tools FIRST** before 
 | Verify code | `memory_verify` | Before committing |
 | Project status | `memory_status` | At session start |
 | Save decision | `memory_record` | After architectural choices |
+| Impact analysis | `memory_blast_radius` | Before modifying critical files |
+
+### CLI Commands
+
+CodeImpact also provides CLI commands for code analysis:
+
+```bash
+# Find unused exports and dead code
+codeimpact deadcode
+
+# Find which tests to run for changed files
+codeimpact test-impact --changed src/file.ts
+
+# Analyze blast radius and risk of changing a file
+codeimpact impact src/core/engine.ts
+
+# View token usage statistics
+codeimpact stats
+
+# Force reindex after git issues (revert, reset, etc.)
+codeimpact reindex
+```

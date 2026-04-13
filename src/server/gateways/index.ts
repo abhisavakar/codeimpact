@@ -1,7 +1,7 @@
 /**
  * Gateway Pattern Implementation
  *
- * Reduces 51 MCP tools to 6 gateway tools + 7 standalone (13 total),
+ * Reduces 51 MCP tools to 6 gateway tools + curated standalone tools,
  * saving ~5,000 tokens per API call on tool description overhead.
  *
  * Benchmark Context: 759x speedup, 51.7% token reduction, p < 0.001, Cohen's d = 3.46
@@ -25,6 +25,7 @@ import { handleMemoryReview } from './memory-review.js';
 import { handleMemoryStatus } from './memory-status.js';
 import { handleMemoryGhost, type MemoryGhostInput, type MemoryGhostResponse } from './memory-ghost.js';
 import { handleMemoryVerify, type MemoryVerifyResponse } from './memory-verify.js';
+import { handleMemoryEvolve, type MemoryEvolveInput, type MemoryEvolveResponse } from './memory-evolve.js';
 
 // ============================================================================
 // Gateway Tool Names
@@ -37,6 +38,7 @@ export const GATEWAY_TOOLS = [
   'memory_status',
   'memory_ghost',
   'memory_verify',
+  'memory_evolve',
 ] as const;
 
 export type GatewayToolName = typeof GATEWAY_TOOLS[number];
@@ -296,6 +298,89 @@ export const gatewayDefinitions: ToolDefinition[] = [
       },
       required: ['code']
     }
+  },
+  {
+    name: 'memory_evolve',
+    description: 'AI-driven knowledge building using agentskills.io SKILL.md format. action="create_skill" to write a new SKILL.md (provide name, description, scope, content as the full markdown body). action="improve_skill" to patch or append to an existing skill (provide skill_id + old_text/new_text for patches, or section + content to append). action="create_doc" to write documentation. action="report_outcome" for task feedback. action="list_signals" to see uncovered technologies, high-risk files, and knowledge gaps. action="get_evolution_status" for usage stats.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['create_skill', 'improve_skill', 'create_doc', 'report_outcome', 'list_signals', 'get_evolution_status'],
+          description: 'What to do'
+        },
+        name: {
+          type: 'string',
+          description: 'Skill name (slug-friendly, e.g. "better-sqlite3-patterns") for create_skill'
+        },
+        description: {
+          type: 'string',
+          description: 'One-line description of when to use this skill (for create_skill)'
+        },
+        scope: {
+          type: 'string',
+          enum: ['core', 'technology', 'feature', 'risk'],
+          description: 'Skill scope for create_skill (default: feature)'
+        },
+        content: {
+          type: 'string',
+          description: 'Full SKILL.md markdown body for create_skill, content to append for improve_skill, or full markdown for create_doc'
+        },
+        skill_id: {
+          type: 'string',
+          description: 'Skill name to improve or query (for improve_skill, get_evolution_status)'
+        },
+        section: {
+          type: 'string',
+          description: 'Section to append to (for improve_skill): rules, pitfalls, verification, steps, when_to_use, key_facts'
+        },
+        old_text: {
+          type: 'string',
+          description: 'Text to find and replace in the skill (for improve_skill patch mode)'
+        },
+        new_text: {
+          type: 'string',
+          description: 'Replacement text (for improve_skill patch mode)'
+        },
+        reason: {
+          type: 'string',
+          description: 'Why this change is needed'
+        },
+        outcome: {
+          type: 'string',
+          enum: ['success', 'failure', 'partial'],
+          description: 'Task outcome for report_outcome'
+        },
+        skills_used: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Skill names that were relevant for report_outcome'
+        },
+        file: {
+          type: 'string',
+          description: 'Source file path (for create_doc or report_outcome)'
+        },
+        feature_name: {
+          type: 'string',
+          description: 'Feature name (for create_doc)'
+        },
+        doc_type: {
+          type: 'string',
+          enum: ['component', 'feature', 'architecture'],
+          description: 'Documentation type for create_doc (default: feature)'
+        },
+        task_description: {
+          type: 'string',
+          description: 'Brief task description for outcome context'
+        },
+        metadata: {
+          type: 'object',
+          description: 'Optional metadata key-value pairs for create_skill frontmatter'
+        }
+      },
+      required: ['action']
+    }
   }
 ];
 
@@ -408,6 +493,62 @@ export const standaloneDefinitions: ToolDefinition[] = [
     }
   },
   {
+    name: 'knowledge_status',
+    description: 'Get autonomous knowledge workspace status: skills/docs/providers counts and workspace location.',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'knowledge_generate',
+    description: 'Generate autonomous knowledge artifacts (skills/docs) and sync platform instruction files.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          description: 'Reason for generation'
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'Preview without writing files'
+        }
+      }
+    }
+  },
+  {
+    name: 'knowledge_sync_rules',
+    description: 'Sync cross-platform rule/instruction files from the knowledge workspace.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dry_run: {
+          type: 'boolean',
+          description: 'Preview without writing files'
+        }
+      }
+    }
+  },
+  {
+    name: 'knowledge_research',
+    description: 'Refresh provider research notes used by generated skills and docs.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topics: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Provider topics to refresh'
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'Preview without writing files'
+        }
+      }
+    }
+  },
+  {
     name: 'memory_blast_radius',
     description: 'BEFORE changing critical files, use this to understand impact. Returns: risk_score (0-100), affected files count, critical paths (auth, payment, security), test coverage, and recommendations (e.g., "Senior review required"). Use for: high-risk changes, unfamiliar code areas, files with many dependents. Helps answer: "Is it safe to change this file?"',
     inputSchema: {
@@ -467,6 +608,9 @@ export async function handleGatewayCall(
     case 'memory_verify':
       return handleMemoryVerify(engine, args as unknown as MemoryVerifyInput);
 
+    case 'memory_evolve':
+      return handleMemoryEvolve(engine, args as unknown as MemoryEvolveInput);
+
     default:
       throw new Error(`Unknown gateway: ${gatewayName}`);
   }
@@ -489,3 +633,4 @@ export type {
 
 export type { MemoryGhostInput, MemoryGhostResponse } from './memory-ghost.js';
 export type { MemoryVerifyResponse as VerifyResponse } from './memory-verify.js';
+export type { MemoryEvolveInput, MemoryEvolveResponse } from './memory-evolve.js';

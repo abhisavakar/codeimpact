@@ -5,6 +5,8 @@ import { TestImpactAnalyzer, type TestImpactResult } from '../core/test-impact-a
 import { BlastRadiusAnalyzer, type BlastRadiusResult } from '../core/blast-radius.js';
 import { CostTracker, type UsageStats, type StatsPeriod } from '../core/cost-tracker.js';
 import { TestAwareness } from '../core/test-awareness/index.js';
+import { PlatformRuleSync, ensureKnowledgeWorkspace, readManifest } from '../core/knowledge/index.js';
+import { ProviderResearch } from '../core/knowledge/provider-research.js';
 import { initializeDatabase } from '../storage/database.js';
 import { Tier2Storage } from '../storage/tier2.js';
 import { join, resolve } from 'path';
@@ -222,6 +224,119 @@ function findDatabasePath(projectInfo: ProjectInfo): string | null {
   }
 
   return null;
+}
+
+function resolveProjectPath(projectPath?: string): { success: boolean; message?: string; targetPath?: string; projectInfo?: ProjectInfo } {
+  let targetPath = projectPath;
+  if (!targetPath) {
+    const activeProject = projectManager.getActiveProject();
+    if (!activeProject) {
+      return {
+        success: false,
+        message: 'No project specified and no active project. Use "codeimpact projects switch <id>" first.',
+      };
+    }
+    targetPath = activeProject.path;
+  }
+
+  const projectInfo = projectManager.getProjectByPath(targetPath);
+  if (!projectInfo) {
+    return {
+      success: false,
+      message: `Project not registered: ${targetPath}. Use "codeimpact projects add ${targetPath}" first.`,
+    };
+  }
+
+  return { success: true, targetPath, projectInfo };
+}
+
+export function runKnowledgeStatus(projectPath?: string): CommandResult {
+  const resolved = resolveProjectPath(projectPath);
+  if (!resolved.success || !resolved.targetPath || !resolved.projectInfo) {
+    return { success: false, message: resolved.message || 'Failed to resolve project path.' };
+  }
+
+  const paths = ensureKnowledgeWorkspace(resolved.targetPath);
+  const manifest = readManifest(resolved.targetPath);
+
+  const status = {
+    generatedAt: manifest.generatedAt,
+    skillCount: manifest.skills.length,
+    docCount: manifest.docs.length,
+    providerCount: manifest.providers.length,
+    workspaceRoot: paths.root,
+  };
+
+  return {
+    success: true,
+    message: [
+      'Knowledge Workspace Status',
+      `Root: ${status.workspaceRoot}`,
+      `Generated: ${status.generatedAt}`,
+      `Skills: ${status.skillCount}`,
+      `Docs: ${status.docCount}`,
+      `Providers: ${status.providerCount}`,
+    ].join('\n'),
+    data: status,
+  };
+}
+
+export function runKnowledgeGenerate(
+  projectPath?: string,
+  options: { reason?: string; dryRun?: boolean } = {}
+): CommandResult {
+  const resolved = resolveProjectPath(projectPath);
+  if (!resolved.success || !resolved.targetPath || !resolved.projectInfo) {
+    return { success: false, message: resolved.message || 'Failed to resolve project path.' };
+  }
+
+  return {
+    success: true,
+    message: [
+      'Knowledge generation requires the full engine.',
+      'Use the MCP tool knowledge_generate or start the server and run:',
+      `  codeimpact init ${resolved.targetPath}`,
+      'The engine will auto-generate knowledge on startup and file changes.',
+    ].join('\n'),
+  };
+}
+
+export function runKnowledgeSyncRules(projectPath?: string, dryRun = false): CommandResult {
+  const resolved = resolveProjectPath(projectPath);
+  if (!resolved.success || !resolved.targetPath || !resolved.projectInfo) {
+    return { success: false, message: resolved.message || 'Failed to resolve project path.' };
+  }
+
+  const paths = ensureKnowledgeWorkspace(resolved.targetPath);
+  const manifest = readManifest(resolved.targetPath);
+  const skillIndex = manifest.skills.map((s) => `${s.name}: ${(s.description || '').slice(0, 80)}`);
+  const platformSync = new PlatformRuleSync(resolved.targetPath);
+  const result = platformSync.syncAll(paths, skillIndex, { dryRun });
+
+  return {
+    success: true,
+    message: `Rules synced (${dryRun ? 'dry-run' : 'write'}): ${result.filter((entry) => entry.updated).length}/${result.length}`,
+    data: result,
+  };
+}
+
+export function runKnowledgeResearch(
+  projectPath?: string,
+  options: { topics?: string[]; dryRun?: boolean } = {}
+): CommandResult {
+  const resolved = resolveProjectPath(projectPath);
+  if (!resolved.success || !resolved.targetPath || !resolved.projectInfo) {
+    return { success: false, message: resolved.message || 'Failed to resolve project path.' };
+  }
+
+  const providerResearch = new ProviderResearch(resolved.targetPath);
+  const result = providerResearch.refresh({ topics: options.topics, dryRun: options.dryRun });
+
+  return {
+    success: true,
+    message: `Provider docs refreshed (${options.dryRun ? 'dry-run' : 'write'}): ${result.length}`,
+    data: result,
+  };
 }
 
 // Run dead code analysis
@@ -1423,6 +1538,19 @@ export function initProject(projectPath?: string, serverUrl?: string): CommandRe
   if (claudeMdResult.success) configuredClients.push(claudeMdResult.message);
   else failedClients.push(claudeMdResult.message);
 
+  // 7. Sync platform instruction/rule files to shared knowledge workspace.
+  try {
+    const paths = ensureKnowledgeWorkspace(targetPath);
+    const platformSync = new PlatformRuleSync(targetPath);
+    const manifest = readManifest(targetPath);
+    const skillIndex = manifest.skills.map((s) => `${s.name}: ${(s.description || '').slice(0, 80)}`);
+    const syncResults = platformSync.syncAll(paths, skillIndex);
+    const updatedCount = syncResults.filter((result) => result.updated).length;
+    configuredClients.push(`Knowledge rule sync: ${updatedCount}/${syncResults.length} files updated`);
+  } catch (err) {
+    failedClients.push(`Knowledge rule sync: Failed - ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   // Build result message
   const modeNote = serverUrl ? `\nMode: Remote server (${serverUrl})` : '';
   let message = `
@@ -1467,6 +1595,7 @@ COMMANDS:
   stats [options]           Show token usage and costs (verbose)
   analytics [options]       Usage dashboard with table-based output
   tail [options]            Live activity log (streams new events)
+  knowledge <action>        Manage autonomous skills/docs workspace
   reindex                   Clear index for fresh re-indexing (after git issues)
   projects list             List all registered projects
   projects add <path>       Add a project to the registry
@@ -1542,6 +1671,12 @@ EXAMPLES:
   # Discover projects
   codeimpact projects discover
 
+  # Knowledge workspace commands
+  codeimpact knowledge status
+  codeimpact knowledge generate --reason "manual refresh"
+  codeimpact knowledge sync-rules --dry-run
+  codeimpact knowledge research --topic fastapi --topic aws
+
   # Start HTTP API server (for tools without MCP support)
   codeimpact serve --project /path/to/project
   codeimpact serve --port 8080
@@ -1571,7 +1706,7 @@ export function executeCLI(args: string[]): void {
         if ((arg === '--server' || arg === '-s') && next) {
           serverUrl = next;
           i++;
-        } else if (!arg.startsWith('-')) {
+        } else if (arg && !arg.startsWith('-')) {
           projectPath = arg;
         }
       }
@@ -1637,6 +1772,57 @@ export function executeCLI(args: string[]): void {
           console.error('Available: list, add, remove, switch, show, discover');
           process.exit(1);
       }
+      break;
+    }
+
+    case 'knowledge': {
+      let projectPath: string | undefined;
+      let dryRun = false;
+      let reason: string | undefined;
+      const topics: string[] = [];
+
+      for (let i = 2; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        if ((arg === '--project' || arg === '-p') && nextArg) {
+          projectPath = nextArg;
+          i++;
+        } else if (arg === '--dry-run') {
+          dryRun = true;
+        } else if (arg === '--reason' && nextArg) {
+          reason = nextArg;
+          i++;
+        } else if (arg === '--topic' && nextArg) {
+          topics.push(nextArg);
+          i++;
+        }
+      }
+
+      let result: CommandResult;
+      switch (subcommand) {
+        case 'status':
+          result = runKnowledgeStatus(projectPath);
+          break;
+        case 'generate':
+          result = runKnowledgeGenerate(projectPath, { reason, dryRun });
+          break;
+        case 'sync-rules':
+          result = runKnowledgeSyncRules(projectPath, dryRun);
+          break;
+        case 'research':
+          result = runKnowledgeResearch(projectPath, {
+            topics: topics.length ? topics : undefined,
+            dryRun,
+          });
+          break;
+        default:
+          console.error(`Unknown knowledge action: ${subcommand}`);
+          console.error('Available: status, generate, sync-rules, research');
+          process.exit(1);
+      }
+
+      console.log(result.message);
+      if (!result.success) process.exit(1);
       break;
     }
 
@@ -1753,7 +1939,7 @@ export function executeCLI(args: string[]): void {
         } else if ((arg === '--project' || arg === '-p') && nextArg) {
           projectPath = nextArg;
           i++;
-        } else if (!arg.startsWith('-') && !targetFile) {
+        } else if (arg && !arg.startsWith('-') && !targetFile) {
           targetFile = arg;
         }
       }

@@ -1,0 +1,59 @@
+# CodeImpact Integration
+
+CodeImpact provides intelligent code analysis. **Use these MCP tools FIRST** before falling back to built-in tools.
+
+## Tool Preferences (IMPORTANT)
+
+1. **For code searches and questions about the codebase:**
+   - Use `mcp_codeimpact_memory_query` FIRST (semantic search, returns relevant context)
+   - Only fall back to file search if CodeImpact returns no results
+
+2. **Before writing or suggesting code changes:**
+   - Run `mcp_codeimpact_memory_review` to check against patterns, past decisions, and potential conflicts
+   - This catches hallucinated imports, duplicate functions, and pattern violations
+
+3. **Before finalizing/committing code:**
+   - Run `mcp_codeimpact_memory_verify` for pre-commit quality checks
+   - Catches security issues, missing dependencies, and import errors
+
+4. **At session start:**
+   - Run `mcp_codeimpact_memory_status` to get project overview and recent changes
+
+5. **For impact analysis:**
+   - Use `mcp_codeimpact_memory_blast_radius` to analyze risk of changing a file
+   - Shows affected files, critical paths, and recommendations
+
+## Why Use CodeImpact Tools?
+
+- **Semantic search**: Understands intent, not just keywords
+- **Pattern awareness**: Knows project conventions and enforces them
+- **Decision memory**: Remembers past architectural decisions
+- **Import validation**: Catches hallucinated imports before they break builds
+- **Blast radius**: Understand impact and risk before making changes
+
+## Quick Reference
+
+| Task | Tool |
+|------|------|
+| Find code | `mcp_codeimpact_memory_query` |
+| Check code | `mcp_codeimpact_memory_review` |
+| Verify code | `mcp_codeimpact_memory_verify` |
+| Project status | `mcp_codeimpact_memory_status` |
+| Save decision | `mcp_codeimpact_memory_record` |
+| Impact analysis | `mcp_codeimpact_memory_blast_radius` |
+
+## CLI Commands
+
+```bash
+# Find unused exports and dead code
+codeimpact deadcode
+
+# Find which tests to run for changed files
+codeimpact test-impact --changed src/file.ts
+
+# Analyze blast radius and risk of changing a file
+codeimpact impact src/core/engine.ts
+
+# View token usage statistics
+codeimpact stats
+```

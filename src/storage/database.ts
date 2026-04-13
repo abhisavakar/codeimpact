@@ -277,6 +277,35 @@ export function initializeDatabase(dbPath: string): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_token_usage_timestamp ON token_usage(timestamp);
     CREATE INDEX IF NOT EXISTS idx_token_usage_query_type ON token_usage(query_type);
 
+    -- Skill Evolution: Usage tracking for self-improving skills
+    CREATE TABLE IF NOT EXISTS skill_usage_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      skill_id TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      file_path TEXT,
+      outcome TEXT NOT NULL,
+      constraint_triggered TEXT,
+      pitfall_triggered TEXT,
+      verdict TEXT,
+      score_delta INTEGER DEFAULT 0,
+      timestamp INTEGER DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS skill_evolution_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      skill_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      section TEXT NOT NULL,
+      content TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      timestamp INTEGER DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_skill_usage_skill ON skill_usage_log(skill_id);
+    CREATE INDEX IF NOT EXISTS idx_skill_usage_timestamp ON skill_usage_log(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_skill_usage_tool ON skill_usage_log(tool_name);
+    CREATE INDEX IF NOT EXISTS idx_skill_evolution_skill ON skill_evolution_history(skill_id);
+
     -- Migration: Add input/output columns if they don't exist (for existing databases)
     -- SQLite doesn't support IF NOT EXISTS for columns, so we handle this in code
   `);

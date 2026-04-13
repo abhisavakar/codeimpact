@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { Tier2Storage } from '../../storage/tier2.js';
+import { KnowledgeDocSync } from '../knowledge/doc-sync.js';
 import { ArchitectureGenerator } from './architecture-generator.js';
 import { ComponentGenerator } from './component-generator.js';
 import { ChangelogGenerator } from './changelog-generator.js';
@@ -22,6 +23,7 @@ export class LivingDocumentationEngine {
   private validator: DocValidator;
   private activityTracker: ActivityTracker;
   private db: Database.Database;
+  private docSync: KnowledgeDocSync;
 
   constructor(
     projectPath: string,
@@ -30,6 +32,7 @@ export class LivingDocumentationEngine {
     tier2: Tier2Storage
   ) {
     this.db = db;
+    this.docSync = new KnowledgeDocSync(projectPath);
     this.archGen = new ArchitectureGenerator(projectPath, tier2);
     this.compGen = new ComponentGenerator(projectPath, tier2);
     this.changeGen = new ChangelogGenerator(projectPath, db);
@@ -40,16 +43,28 @@ export class LivingDocumentationEngine {
   async generateArchitectureDocs(): Promise<ArchitectureDoc> {
     const doc = await this.archGen.generate();
 
-    // Store architecture docs in documentation table
     this.storeDocumentation('_architecture', 'architecture', JSON.stringify(doc));
 
-    // Log activity
     this.activityTracker.logActivity(
       'doc_generation',
       'Generated architecture documentation',
       undefined,
       { type: 'architecture' }
     );
+
+    this.docSync.syncArchitecture(doc);
+
+    try {
+      const validation = await this.validator.validate();
+      this.storeDocumentation('_validation', 'validation', JSON.stringify({
+        score: validation.score,
+        outdatedDocs: validation.outdatedDocs,
+        undocumentedCode: validation.undocumentedCode,
+        suggestions: validation.suggestions,
+      }));
+    } catch {
+      // validation is non-critical
+    }
 
     return doc;
   }
@@ -75,11 +90,15 @@ export class LivingDocumentationEngine {
       { type: 'component' }
     );
 
+    this.docSync.syncComponent(doc);
+
     return doc;
   }
 
   async generateChangelog(options: ChangelogOptions = {}): Promise<DailyChangelog[]> {
-    return this.changeGen.generate(options);
+    const changelog = await this.changeGen.generate(options);
+    this.docSync.syncChangelog(changelog);
+    return changelog;
   }
 
   async validateDocs(): Promise<ValidationResult> {

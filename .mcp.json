@@ -5,9 +5,9 @@
       "args": [
         "/c",
         "node",
-        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\codeimpact\\dist\\index.js",
+        "C:\\Users\\abhis\\AppData\\Roaming\\npm\\node_modules\\codeimpact\\dist\\index.js",
         "--project",
-        "C:\\Users\\abhis\\Desktop\\fullstackoverweekend\\codeimpact"
+        "E:\\Coding\\fullstackoverweekend\\codeimpact"
       ]
     }
   }
