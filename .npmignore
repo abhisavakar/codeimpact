@@ -42,3 +42,7 @@ opencode.json
 src/agent/
 dist/agent.js
 dist/agent.js.map
+
+# Never exclude package readme / license (required for npmjs.com listing)
+!README.md
+!LICENSE
