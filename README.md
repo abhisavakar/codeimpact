@@ -13,7 +13,7 @@
 npm i codeimpact
 ```
 
-CodeImpact is an MCP server that indexes your codebase and gives AI assistants like Claude the ability to understand your project's structure, dependencies, and history across sessions.
+CodeImpact is an MCP server that indexes your codebase and gives AI assistants like Claude the ability to understand your project's structure, dependencies, and history across sessions. It also includes an **AI-driven knowledge system** where AI assistants create and maintain project-specific skills using the [agentskills.io](https://agentskills.io) open standard.
 
 ---
 
@@ -21,12 +21,13 @@ CodeImpact is an MCP server that indexes your codebase and gives AI assistants l
 
 - **Indexes your code** - Extracts functions, classes, imports, and exports using true Tree-sitter AST parsing
 - **Builds a dependency graph** - Tracks what files import what, transitively
+- **AI Knowledge System** - AI assistants create reusable SKILL.md files that persist across sessions
 - **Dead code detection** - Finds unused exports and orphan files with confidence scoring
 - **Test impact analysis** - Shows which tests to run when you change a file
 - **Blast radius analysis** - Risk scoring and critical path detection for any file change
+- **Knowledge gap detection** - Identifies uncovered technologies and high-risk areas
 - **Cost tracking** - Monitors token usage and costs for CodeImpact queries
 - **Detects circular dependencies** - Finds import cycles in your codebase
-- **Indexes tests** - Identifies test files and what source files they cover
 - **Records decisions** - Stores architectural decisions that persist across sessions
 - **Semantic search** - Find code by meaning using local embeddings
 
@@ -51,6 +52,85 @@ codeimpact init
 This registers your project and configures Claude Desktop, Claude Code, OpenCode, and Cursor automatically. Restart your AI tool and you're ready.
 
 > **Windows users**: If upgrading, close any AI tools using CodeImpact first (or run `taskkill /f /im node.exe`) before reinstalling. Windows locks native binaries while they're in use.
+
+---
+
+## AI Knowledge System
+
+CodeImpact includes a self-improving knowledge system where AI assistants create, maintain, and learn from project-specific skills. Skills are stored as **SKILL.md** files following the [agentskills.io](https://agentskills.io) open standard — compatible with Claude Code, Cursor, Codex, Gemini CLI, and 27+ other AI agents.
+
+### How It Works
+
+1. **Static analysis detects signals** — technologies, high-risk files, patterns
+2. **AI creates skills after real work** — not templates, real project knowledge
+3. **Skills persist across sessions** — future AI sessions benefit from past knowledge
+4. **Progressive disclosure** — only skill names load at startup; full content loads on demand
+
+### Skill Format (agentskills.io SKILL.md)
+
+```markdown
+---
+name: better-sqlite3-patterns
+description: Synchronous database patterns. Use when working with database queries.
+version: 1.0
+metadata:
+  scope: technology
+  created_by: ai
+---
+
+# better-sqlite3 Patterns
+
+## When to Use
+When modifying database queries, adding tables, or working with any file
+that imports from src/storage/database.ts.
+
+## Rules
+- ALL database access goes through database.ts — never import better-sqlite3 directly.
+- Use db.prepare().all() for SELECT, db.prepare().run() for INSERT/UPDATE/DELETE.
+
+## Pitfalls
+- db.exec() returns nothing. If you use it for SELECT, you get undefined.
+- better-sqlite3 is synchronous. Do NOT wrap in async/await.
+
+## Verification
+- npx tsc --noEmit passes with no type errors on database code.
+```
+
+### Knowledge Structure
+
+```
+your-project/
+├── knowledge/
+│   ├── skills/
+│   │   ├── technology/
+│   │   │   └── better-sqlite3-patterns/
+│   │   │       └── SKILL.md
+│   │   ├── features/
+│   │   │   └── gateway-pattern/
+│   │   │       └── SKILL.md
+│   │   └── risk/
+│   │       └── high-risk-files/
+│   │           └── SKILL.md
+│   ├── docs/
+│   │   ├── architecture/
+│   │   ├── features/
+│   │   └── integrations/
+│   └── index.json
+├── .codeimpact/
+│   └── codeimpact.db
+└── src/
+```
+
+### MCP Tools for Knowledge
+
+| Tool | What It Does |
+|------|-------------|
+| `memory_status` | Project overview + `knowledge_gaps` showing uncovered technologies |
+| `memory_evolve` | Create/improve skills, report outcomes, list signals |
+| `memory_query` | Semantic search across code and knowledge |
+| `memory_review` | Check code against learned patterns and skill rules |
+| `memory_verify` | Pre-commit quality checks using skill verification rules |
+| `memory_blast_radius` | Impact analysis with skill-aware recommendations |
 
 ---
 
@@ -164,6 +244,13 @@ Once CodeImpact is running, your AI assistant can:
 "What tests cover this function?"
 ```
 
+**Build knowledge:**
+```
+"Check memory_status for knowledge gaps"
+"Create a skill for the authentication patterns I just implemented"
+"What skills exist for the database layer?"
+```
+
 **Find dead code:**
 ```
 "Are there any unused exports in this project?"
@@ -190,12 +277,13 @@ CodeImpact watches your project and maintains:
 
 1. **Symbol index** - Functions, classes, imports, exports
 2. **Dependency graph** - File-to-file import relationships
-3. **Decision log** - Architectural decisions you've recorded
-4. **Embeddings** - For semantic search (using MiniLM-L6 locally)
-5. **Test index** - Test files and their coverage mappings
-6. **Token usage** - Query tracking for cost analysis
+3. **Knowledge workspace** - AI-created SKILL.md files and documentation
+4. **Decision log** - Architectural decisions you've recorded
+5. **Embeddings** - For semantic search (using MiniLM-L6 locally)
+6. **Test index** - Test files and their coverage mappings
+7. **Token usage** - Query tracking for cost analysis
 
-When your AI assistant asks a question, CodeImpact provides the relevant context.
+When your AI assistant asks a question, CodeImpact provides the relevant context. When the AI completes work, it captures what it learned as skills for future sessions.
 
 ---
 
@@ -309,11 +397,15 @@ your-project/
 │   ├── codeimpact.db       # SQLite database
 │   ├── tier1.json          # Hot context cache
 │   └── feature-context.json # Session tracking
+├── knowledge/
+│   ├── skills/             # AI-created SKILL.md files
+│   ├── docs/               # Generated documentation
+│   └── index.json          # Knowledge manifest
 ├── src/
 └── ...
 ```
 
-Each project has its own isolated `.codeimpact/` folder - no cross-contamination between projects.
+Each project has its own isolated `.codeimpact/` folder and `knowledge/` workspace - no cross-contamination between projects.
 
 Global registry for project listing:
 ```
@@ -339,6 +431,7 @@ git clone https://github.com/abhisavakar/codeimpact.git
 cd codeimpact
 npm install
 npm run build
+npm test
 ```
 
 ---
