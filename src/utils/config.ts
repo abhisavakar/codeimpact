@@ -10,6 +10,18 @@ export function getDefaultConfig(projectPath: string): CodeImpactConfig {
     dataDir: join(normalizedPath, '.codeimpact'),
     maxTokens: 6000,
     embeddingModel: 'Xenova/all-MiniLM-L6-v2', // Fallback model, faster and smaller
+    similarity: {
+      searchThreshold: 0.3,
+      dejaVuThreshold: 0.7,
+    },
+    compaction: {
+      warningThreshold: 70,
+      criticalThreshold: 85,
+    },
+    git: {
+      diffMaxChars: 2000,
+      diffMaxLines: 100,
+    },
     watchIgnore: [
       // ===== CodeImpact =====
       '**/.codeimpact/**',

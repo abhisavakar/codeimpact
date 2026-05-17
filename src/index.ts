@@ -2,7 +2,7 @@ import { MCPServer } from './server/mcp.js';
 import { HTTPServer } from './server/http.js';
 import { RemoteMCPServer } from './server/remote-mcp.js';
 import { getDefaultConfig, parseArgs } from './utils/config.js';
-import { executeCLI, printHelp } from './cli/commands.js';
+import { executeCLI, printHelp } from './cli/commands/index.js';
 
 function parseServeArgs(args: string[]): { projectPath: string; port: number } {
   let projectPath = process.cwd();

@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { ContextHealth, ContextChunk } from '../../types/documentation.js';
 import { CriticalContextManager } from './critical-context.js';
+import { estimateTokens as _estimateTokens } from '../../utils/token-counter.js';
 
 // Default token limits (can be overridden)
 const DEFAULT_TOKEN_LIMIT = 100000;
@@ -236,8 +237,6 @@ export class ContextHealthMonitor {
   }
 
   estimateTokens(text: string): number {
-    // Rough estimation: ~4 characters per token for English
-    // This is a simple heuristic; real implementation would use a proper tokenizer
-    return Math.ceil(text.length / 4);
+    return _estimateTokens(text);
   }
 }

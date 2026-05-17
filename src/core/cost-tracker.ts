@@ -1,4 +1,5 @@
 import type { Tier2Storage } from '../storage/tier2.js';
+import { PRICING } from '../utils/token-counter.js';
 
 /**
  * Time period for stats aggregation.
@@ -28,24 +29,6 @@ export interface UsageStats {
     costDollars: number;
   }>;
 }
-
-/**
- * Pricing constants for cost estimation.
- * Based on Claude API pricing (March 2024).
- */
-const PRICING = {
-  // Claude 3.5 Sonnet pricing per 1M tokens
-  SONNET_INPUT_PER_1M: 3.00,
-  SONNET_OUTPUT_PER_1M: 15.00,
-
-  // Claude 3 Opus pricing per 1M tokens
-  OPUS_INPUT_PER_1M: 15.00,
-  OPUS_OUTPUT_PER_1M: 75.00,
-
-  // Default to Sonnet pricing (most common)
-  DEFAULT_INPUT_PER_1M: 3.00,
-  DEFAULT_OUTPUT_PER_1M: 15.00,
-};
 
 /**
  * CostTracker - Tracks token usage for CodeImpact queries.

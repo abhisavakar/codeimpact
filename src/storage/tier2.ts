@@ -35,6 +35,15 @@ function PATH_EXCLUSION_SQL(col: string = 'path'): string {
         AND ${col} NOT LIKE 'knowledge/%'`;
 }
 
+/**
+ * Tier2Storage — synchronous SQLite storage layer using better-sqlite3.
+ *
+ * All methods in this class are synchronous because better-sqlite3 provides
+ * a synchronous API. Some callers (e.g. CodeImpactEngine) wrap these calls
+ * in async methods because they also involve async embedding generation
+ * (via Transformers.js) before querying this storage. This sync/async mix
+ * is intentional and not a bug.
+ */
 export class Tier2Storage {
   private db: Database.Database;
 
@@ -120,8 +129,8 @@ export class Tier2Storage {
     // Batch delete in chunks to avoid SQLite variable limits
     const chunkSize = 500;
     let deleted = 0;
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize);
+
+    const purgeChunk = this.db.transaction((chunk: number[]) => {
       const placeholders = chunk.map(() => '?').join(',');
 
       this.db.prepare(`DELETE FROM embeddings WHERE file_id IN (${placeholders})`).run(...chunk);
@@ -130,7 +139,12 @@ export class Tier2Storage {
       this.db.prepare(`DELETE FROM exports WHERE file_id IN (${placeholders})`).run(...chunk);
       this.db.prepare(`DELETE FROM dependencies WHERE source_file_id IN (${placeholders}) OR target_file_id IN (${placeholders})`).run(...chunk, ...chunk);
       const result = this.db.prepare(`DELETE FROM files WHERE id IN (${placeholders})`).run(...chunk);
-      deleted += result.changes;
+      return result.changes;
+    });
+
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      deleted += purgeChunk(chunk);
     }
 
     return deleted;

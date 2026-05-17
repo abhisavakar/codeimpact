@@ -1,15 +1,6 @@
-// Simple token estimation
-// For more accurate counting, consider using tiktoken or similar
-// This approximation is sufficient for budget management
-
-const AVG_CHARS_PER_TOKEN = 4;
-
-export function estimateTokens(text: string): number {
-  if (!text) return 0;
-  // Rough approximation: 1 token ≈ 4 characters for English/code
-  // This is a simplification but works well enough for budgeting
-  return Math.ceil(text.length / AVG_CHARS_PER_TOKEN);
-}
+// Re-export the canonical estimateTokens from token-counter
+export { estimateTokens } from './token-counter.js';
+import { estimateTokens } from './token-counter.js';
 
 export class TokenBudget {
   private total: number;

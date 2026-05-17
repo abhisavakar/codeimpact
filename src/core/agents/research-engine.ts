@@ -9,6 +9,7 @@ import type { DetectedTechnology, ResearchFile, DocSource } from './types.js';
 import { getAgentWorkspacePaths } from './workspace.js';
 import { assessTrust, renderTrustFrontmatter } from './research-trust.js';
 import { inferDocSource } from './universal-inference.js';
+import { estimateTokens } from '../../utils/token-counter.js';
 
 // ============================================================================
 // Public API
@@ -399,10 +400,6 @@ function isStale(research: ResearchFile, cadenceHours: number): boolean {
   return Date.now() > staleAfter;
 }
 
-function estimateTokens(text: string): number {
-  // Rough estimate: ~4 chars per token
-  return Math.ceil(text.length / 4);
-}
 
 function truncateToTokenBudget(text: string, maxTokens: number): string {
   const maxChars = maxTokens * 4;

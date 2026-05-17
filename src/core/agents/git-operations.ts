@@ -1,9 +1,9 @@
 /**
  * Git Operations — branch creation, commits, and PR workflow for .code-impact/ changes.
- * Uses child_process.execSync for simplicity (no external deps).
+ * Uses child_process.execFileSync for safety (no shell interpolation).
  */
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { readAgentConfig } from './workspace.js';
@@ -31,7 +31,7 @@ export interface CommitOptions {
  */
 export function isGitRepo(projectPath: string): boolean {
   try {
-    git(projectPath, 'rev-parse --is-inside-work-tree');
+    git(projectPath, ['rev-parse', '--is-inside-work-tree']);
     return true;
   } catch {
     return false;
@@ -42,7 +42,7 @@ export function isGitRepo(projectPath: string): boolean {
  * Get current branch name.
  */
 export function getCurrentBranch(projectPath: string): string {
-  return git(projectPath, 'rev-parse --abbrev-ref HEAD').trim();
+  return git(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']).trim();
 }
 
 /**
@@ -62,9 +62,9 @@ export function ensureBranch(projectPath: string): GitResult {
     const branchExists = branchExistsLocal(projectPath, branch);
 
     if (branchExists) {
-      git(projectPath, `checkout ${branch}`);
+      git(projectPath, ['checkout', branch]);
     } else {
-      git(projectPath, `checkout -b ${branch}`);
+      git(projectPath, ['checkout', '-b', branch]);
     }
 
     return { success: true, message: `Switched to branch ${branch}`, branch };
@@ -84,18 +84,18 @@ export function commitChanges(projectPath: string, options: CommitOptions): GitR
     // Stage files
     if (options.files && options.files.length > 0) {
       for (const file of options.files) {
-        git(projectPath, `add "${file}"`);
+        git(projectPath, ['add', file]);
       }
     } else {
       // Stage all .code-impact/ changes and AGENTS.md
-      git(projectPath, 'add .code-impact/');
+      git(projectPath, ['add', '.code-impact/']);
       if (existsSync(join(projectPath, 'AGENTS.md'))) {
-        git(projectPath, 'add AGENTS.md');
+        git(projectPath, ['add', 'AGENTS.md']);
       }
     }
 
     // Check if there are staged changes
-    const status = git(projectPath, 'diff --cached --stat');
+    const status = git(projectPath, ['diff', '--cached', '--stat']);
     if (!status.trim()) {
       return { success: true, message: 'No changes to commit' };
     }
@@ -106,11 +106,9 @@ export function commitChanges(projectPath: string, options: CommitOptions): GitR
       commitMsg += `\n\n${options.body}`;
     }
 
-    // Commit (using -m with multiline via --message flag)
-    const escapedMsg = commitMsg.replace(/"/g, '\\"');
-    git(projectPath, `commit -m "${escapedMsg}"`);
+    git(projectPath, ['commit', '-m', commitMsg]);
 
-    const hash = git(projectPath, 'rev-parse --short HEAD').trim();
+    const hash = git(projectPath, ['rev-parse', '--short', 'HEAD']).trim();
     return { success: true, message: `Committed: ${hash}`, commitHash: hash };
   } catch (err) {
     return {
@@ -128,12 +126,12 @@ export function pushBranch(projectPath: string): GitResult {
 
   try {
     // Check if remote exists
-    const remotes = git(projectPath, 'remote').trim();
+    const remotes = git(projectPath, ['remote']).trim();
     if (!remotes) {
       return { success: false, message: 'No remote configured' };
     }
 
-    git(projectPath, `push -u origin ${branch}`);
+    git(projectPath, ['push', '-u', 'origin', branch]);
     return { success: true, message: `Pushed to origin/${branch}`, branch };
   } catch (err) {
     return {
@@ -160,7 +158,7 @@ export function commitAndPush(
   const commitResult = commitChanges(projectPath, options);
   if (!commitResult.success) {
     // Switch back to original branch on failure
-    try { git(projectPath, `checkout ${originalBranch}`); } catch { /* ignore */ }
+    try { git(projectPath, ['checkout', originalBranch]); } catch { /* ignore */ }
     return commitResult;
   }
 
@@ -183,7 +181,7 @@ export function commitAndPush(
  */
 export function hasChanges(projectPath: string): boolean {
   try {
-    const status = git(projectPath, 'status --porcelain .code-impact/ AGENTS.md');
+    const status = git(projectPath, ['status', '--porcelain', '.code-impact/', 'AGENTS.md']);
     return status.trim().length > 0;
   } catch {
     return false;
@@ -195,7 +193,7 @@ export function hasChanges(projectPath: string): boolean {
  */
 export function getDiffSummary(projectPath: string): string {
   try {
-    const diff = git(projectPath, 'diff --stat .code-impact/ AGENTS.md');
+    const diff = git(projectPath, ['diff', '--stat', '.code-impact/', 'AGENTS.md']);
     return diff.trim();
   } catch {
     return '';
@@ -207,7 +205,7 @@ export function getDiffSummary(projectPath: string): string {
  */
 export function getChangedFiles(projectPath: string): string[] {
   try {
-    const status = git(projectPath, 'status --porcelain .code-impact/ AGENTS.md');
+    const status = git(projectPath, ['status', '--porcelain', '.code-impact/', 'AGENTS.md']);
     return status
       .split('\n')
       .filter(l => l.trim())
@@ -238,8 +236,8 @@ export function computeContentHash(content: string): string {
 // Internal Helpers
 // ============================================================================
 
-function git(cwd: string, command: string): string {
-  return execSync(`git ${command}`, {
+function git(cwd: string, args: string[]): string {
+  return execFileSync('git', args, {
     cwd,
     encoding: 'utf-8',
     timeout: 30000,
@@ -249,7 +247,7 @@ function git(cwd: string, command: string): string {
 
 function branchExistsLocal(projectPath: string, branch: string): boolean {
   try {
-    git(projectPath, `show-ref --verify --quiet refs/heads/${branch}`);
+    git(projectPath, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]);
     return true;
   } catch {
     return false;

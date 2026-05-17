@@ -271,7 +271,8 @@ export class GhostMode {
       const embedding = await this.embeddingGenerator.embed(searchQuery);
 
       return this.tier2.searchDecisions(embedding, 5);
-    } catch {
+    } catch (err) {
+      console.error('[GhostMode] Failed to find related decisions:', err instanceof Error ? err.message : err);
       return [];
     }
   }

@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 import type { Change, ChangeQueryResult, ChangeQueryOptions } from '../../types/documentation.js';
@@ -37,8 +37,8 @@ export class ChangeTracker {
   syncFromGit(limit: number = 100): number {
     try {
       // Get recent commits
-      const logOutput = execSync(
-        `git log --oneline -${limit} --format="%H|%an|%ad|%s" --date=unix`,
+      const logOutput = execFileSync(
+        'git', ['log', '--oneline', `-${limit}`, '--format=%H|%an|%ad|%s', '--date=unix'],
         { cwd: this.projectPath, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
       ).trim();
 
@@ -48,9 +48,14 @@ export class ChangeTracker {
       let synced = 0;
 
       for (const commitLine of commits) {
-        const [hash, author, dateStr, ...messageParts] = commitLine.split('|');
-        const message = messageParts.join('|');
+        const parts = commitLine.split('|');
+        const hash = parts[0] ?? '';
+        const author = parts[1] ?? '';
+        const dateStr = parts[2] ?? '';
+        const message = parts.slice(3).join('|');
         const timestamp = parseInt(dateStr, 10);
+
+        if (!hash) continue;
 
         // Check if already synced
         const existing = this.db.prepare(
@@ -61,8 +66,8 @@ export class ChangeTracker {
 
         // Get files changed in this commit
         try {
-          const filesOutput = execSync(
-            `git show --numstat --format="" ${hash}`,
+          const filesOutput = execFileSync(
+            'git', ['show', '--numstat', '--format=', hash],
             { cwd: this.projectPath, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
           ).trim();
 
@@ -71,18 +76,26 @@ export class ChangeTracker {
           const files = filesOutput.split('\n').filter(Boolean);
 
           for (const fileLine of files) {
-            const [added, removed, filePath] = fileLine.split('\t');
+            const tabParts = fileLine.split('\t');
+            const added = tabParts[0] ?? '0';
+            const removed = tabParts[1] ?? '0';
+            const filePath = tabParts[2];
             if (!filePath) continue;
 
             // Get diff for this file (cross-platform, no pipe to head)
             let diff = '';
             try {
-              const fullDiff = execSync(
-                `git show ${hash} -- "${filePath}"`,
+              const fullDiff = execFileSync(
+                'git', ['show', hash, '--', filePath],
                 { cwd: this.projectPath, encoding: 'utf-8', maxBuffer: 1024 * 1024 }
               );
               // Limit to first 100 lines and 2000 chars
-              diff = fullDiff.split('\n').slice(0, 100).join('\n').slice(0, 2000);
+              const lines = fullDiff.split('\n');
+              const truncatedByLines = lines.length > 100;
+              diff = lines.slice(0, 100).join('\n').slice(0, 2000);
+              if (truncatedByLines || fullDiff.length > 2000) {
+                console.error(`[ChangeTracker] Diff truncated for ${filePath} in ${hash} (${lines.length} lines, ${fullDiff.length} chars)`);
+              }
             } catch {
               // Ignore diff errors
             }

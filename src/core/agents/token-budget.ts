@@ -3,6 +3,8 @@
  * Ensures generated files stay within configured token limits.
  */
 
+import { estimateTokens } from '../../utils/token-counter.js';
+
 // ============================================================================
 // Budget Configuration
 // ============================================================================
@@ -57,13 +59,8 @@ export function getSectionPriority(sectionName: string): number {
   return 50; // default priority
 }
 
-// ============================================================================
-// Token Estimation
-// ============================================================================
-
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
+// Re-export for backwards compatibility
+export { estimateTokens };
 
 // ============================================================================
 // Budget Enforcement

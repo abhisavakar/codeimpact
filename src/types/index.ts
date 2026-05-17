@@ -124,6 +124,18 @@ export interface CodeImpactConfig {
   maxTokens: number;
   embeddingModel: string;
   watchIgnore: string[];
+  similarity?: {
+    searchThreshold?: number;
+    dejaVuThreshold?: number;
+  };
+  compaction?: {
+    warningThreshold?: number;
+    criticalThreshold?: number;
+  };
+  git?: {
+    diffMaxChars?: number;
+    diffMaxLines?: number;
+  };
 }
 
 // Phase 2: AST & Symbol types

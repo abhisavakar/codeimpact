@@ -6,6 +6,7 @@ import type {
 } from '../../types/documentation.js';
 import { ContextHealthMonitor } from './context-health.js';
 import { CriticalContextManager } from './critical-context.js';
+import { estimateTokens } from '../../utils/token-counter.js';
 
 // Thresholds for different strategies
 const RELEVANCE_THRESHOLD_SUMMARIZE = 0.5;
@@ -109,7 +110,7 @@ export class CompactionEngine {
     // Calculate new token count
     const keptTokens = toKeep.reduce((sum, c) => sum + c.tokens, 0);
     const recentTokens = recentChunks.reduce((sum, c) => sum + c.tokens, 0);
-    const summaryTokens = summaries.reduce((sum, s) => sum + this.estimateTokens(s), 0);
+    const summaryTokens = summaries.reduce((sum, s) => sum + estimateTokens(s), 0);
 
     const tokensAfter = keptTokens + recentTokens + summaryTokens;
     const tokensSaved = tokensBefore - tokensAfter;
@@ -126,7 +127,7 @@ export class CompactionEngine {
     for (const summary of summaries) {
       this.healthMonitor.addChunk({
         content: summary,
-        tokens: this.estimateTokens(summary),
+        tokens: estimateTokens(summary),
         timestamp: new Date(),
         type: 'message'
       });
@@ -137,19 +138,7 @@ export class CompactionEngine {
       this.healthMonitor.addChunk(chunk);
     }
 
-    // Check if we hit target utilization
-    if (targetUtilization) {
-      const currentUtilization = (tokensAfter / this.healthMonitor.getTokenLimit()) * 100;
-      if (currentUtilization > targetUtilization && strategy !== 'aggressive') {
-        // Recursively compact with more aggressive strategy
-        return this.compact({
-          ...options,
-          strategy: strategy === 'summarize' ? 'selective' : 'aggressive'
-        });
-      }
-    }
-
-    return {
+    const result: CompactionResult = {
       success: true,
       strategy,
       tokensBefore,
@@ -160,6 +149,23 @@ export class CompactionEngine {
       removedChunks: toRemove.length,
       summaries
     };
+
+    // Check if we hit target utilization — escalate without recursion
+    if (targetUtilization) {
+      const currentUtilization = (tokensAfter / this.healthMonitor.getTokenLimit()) * 100;
+      if (currentUtilization > targetUtilization) {
+        const nextStrategy = strategy === 'summarize' ? 'selective'
+          : strategy === 'selective' ? 'aggressive'
+          : null;
+
+        if (nextStrategy) {
+          return this.compact({ ...options, strategy: nextStrategy });
+        }
+        // aggressive already applied — return best-effort result
+      }
+    }
+
+    return result;
   }
 
   private generateSummaries(chunks: ContextChunk[]): string[] {
@@ -249,11 +255,6 @@ export class CompactionEngine {
     }
 
     return score;
-  }
-
-  private estimateTokens(text: string): number {
-    // Rough estimation: ~4 characters per token
-    return Math.ceil(text.length / 4);
   }
 
   autoCompact(): CompactionResult {

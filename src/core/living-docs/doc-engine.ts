@@ -62,8 +62,8 @@ export class LivingDocumentationEngine {
         undocumentedCode: validation.undocumentedCode,
         suggestions: validation.suggestions,
       }));
-    } catch {
-      // validation is non-critical
+    } catch (err) {
+      console.error('[DocEngine] Validation failed:', err instanceof Error ? err.message : err);
     }
 
     return doc;
@@ -146,8 +146,8 @@ export class LivingDocumentationEngine {
         `);
         stmt.run(fileRow.id, docType, content);
       }
-    } catch {
-      // Ignore storage errors
+    } catch (err) {
+      console.error('[DocEngine] Failed to store documentation:', err instanceof Error ? err.message : err);
     }
   }
 }

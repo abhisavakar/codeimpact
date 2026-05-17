@@ -114,8 +114,27 @@ export class BugCorrelator {
     line?: number;
     relatedChanges?: string[];
   }): Bug {
-    const id = randomUUID();
     const timestamp = Math.floor(Date.now() / 1000);
+
+    // Deduplicate: if the same error was recorded within the last hour, return existing
+    const existing = this.db.prepare(
+      'SELECT id, error, stack_trace, file, line, timestamp, status, related_changes FROM bug_history WHERE error = ? AND timestamp > ? LIMIT 1'
+    ).get(error, timestamp - 3600) as { id: string; error: string; stack_trace: string | null; file: string | null; line: number | null; timestamp: number; status: string; related_changes: string } | undefined;
+
+    if (existing) {
+      return {
+        id: existing.id,
+        error: existing.error,
+        stackTrace: existing.stack_trace || undefined,
+        file: existing.file || undefined,
+        line: existing.line || undefined,
+        timestamp: new Date(existing.timestamp * 1000),
+        status: existing.status as Bug['status'],
+        relatedChanges: JSON.parse(existing.related_changes || '[]')
+      };
+    }
+
+    const id = randomUUID();
 
     this.db.prepare(`
       INSERT INTO bug_history (id, error, stack_trace, file, line, timestamp, status, related_changes)

@@ -26,9 +26,12 @@ import { DeadCodeDetector, type DeadCodeReport, type UnusedExport, type UnusedFi
 import { TestImpactAnalyzer, type TestImpactResult, type AffectedFile } from './test-impact-analyzer.js';
 import { BlastRadiusAnalyzer, type BlastRadiusResult, type RiskLevel } from './blast-radius.js';
 import { CostTracker, type UsageStats, type StatsPeriod } from './cost-tracker.js';
-import { GitStalenessChecker, ActivityGate, GitSyncManager, formatGitChangeInfo, type GitChangeInfo } from './refresh/index.js';
+import { GitStalenessChecker, ActivityGate, GitSyncManager } from './refresh/index.js';
 import { KnowledgeOrchestrator } from './knowledge/index.js';
 import { detectLanguage, getPreview, countLines } from '../utils/files.js';
+import { GitSyncCoordinator } from './engine/git-sync-coordinator.js';
+import { LivingDocsCoordinator } from './engine/living-docs-coordinator.js';
+import { MultiProjectCoordinator } from './engine/multi-project-coordinator.js';
 import type { CodeImpactConfig, AssembledContext, Decision, ProjectSummary, SearchResult, CodeSymbol, SymbolKind, ActiveFeatureContext, HotContext } from '../types/index.js';
 import type { ArchitectureDoc, ComponentDoc, DailyChangelog, ChangelogOptions, ValidationResult, ActivityResult, UndocumentedItem, ContextHealth, CompactionResult, CompactionOptions, CriticalContext, DriftResult, ConfidenceResult, ConfidenceLevel, ConfidenceSources, ConflictResult, ChangeQueryResult, ChangeQueryOptions, Diagnosis, PastBug, FixSuggestion, Change, Pattern, PatternCategory, PatternValidationResult, ExistingFunction, TestInfo, TestFramework, TestValidationResult, TestUpdate, TestCoverage } from '../types/documentation.js';
 import type Database from 'better-sqlite3';
@@ -63,6 +66,9 @@ export class CodeImpactEngine {
   private gitSyncManager: GitSyncManager;
   private activityGate: ActivityGate;
   private knowledgeOrchestrator: KnowledgeOrchestrator;
+  private gitSyncCoordinator: GitSyncCoordinator;
+  private livingDocsCoordinator: LivingDocsCoordinator;
+  private multiProjectCoordinator: MultiProjectCoordinator;
   private pendingComponentDocPaths = new Set<string>();
   private componentDocTimer: NodeJS.Timeout | null = null;
   private initialized = false;
@@ -193,8 +199,30 @@ export class CodeImpactEngine {
     this.activityGate = new ActivityGate();
     this.knowledgeOrchestrator = new KnowledgeOrchestrator(config.projectPath, this);
 
+    // Initialize coordinators (extracted sub-managers)
+    this.gitSyncCoordinator = new GitSyncCoordinator({
+      projectPath: config.projectPath,
+      indexer: this.indexer,
+      learningEngine: this.learningEngine,
+      changeIntelligence: this.changeIntelligence,
+      livingDocs: this.livingDocs,
+      gitStalenessChecker: this.gitStalenessChecker,
+      gitSyncManager: this.gitSyncManager,
+      activityGate: this.activityGate,
+      knowledgeOrchestrator: this.knowledgeOrchestrator,
+    });
+    this.livingDocsCoordinator = new LivingDocsCoordinator({
+      db: this.db,
+      livingDocs: this.livingDocs,
+      changeIntelligence: this.changeIntelligence,
+    });
+    this.multiProjectCoordinator = new MultiProjectCoordinator({
+      projectManager: this.projectManager,
+      indexer: this.indexer,
+    });
+
     // Set up git sync manager to detect reverts, resets, branch switches
-    this.setupGitSyncManager();
+    this.gitSyncCoordinator.setupGitSyncManager();
 
     // Register this project
     const projectInfo = this.projectManager.registerProject(config.projectPath);
@@ -304,126 +332,7 @@ export class CodeImpactEngine {
     });
   }
 
-  private setupGitSyncManager(): void {
-    // Initialize git sync manager
-    this.gitSyncManager.initialize();
-
-    // Handle git state changes
-    this.gitSyncManager.onGitChange(async (change: GitChangeInfo) => {
-      console.error(formatGitChangeInfo(change));
-      this.knowledgeOrchestrator.schedule(`git_${change.type}`, change.changedFiles);
-
-      switch (change.type) {
-        case 'history_rewrite':
-          // Reset, revert, rebase, or force push detected
-          // Need to reindex affected files as the code has changed
-          console.error('[GitSync] History rewrite detected - triggering reindex of affected files');
-          await this.handleHistoryRewrite(change);
-          break;
-
-        case 'branch_switch':
-          // Switched branches - need full reindex as files may be very different
-          console.error('[GitSync] Branch switch detected - triggering full reindex');
-          await this.handleBranchSwitch(change);
-          break;
-
-        case 'new_commits':
-          // Normal forward progress - just update changed files
-          if (change.changedFiles.length > 0) {
-            console.error(`[GitSync] New commits with ${change.changedFiles.length} changed files`);
-            // File watcher should handle this, but ensure we're synced
-            this.gitStalenessChecker.updateCachedHead();
-          }
-          break;
-
-        case 'merge':
-          // Merge commit - may have many changed files
-          if (change.changedFiles.length > 0) {
-            console.error(`[GitSync] Merge detected with ${change.changedFiles.length} changed files`);
-            // File watcher should handle this
-            this.gitStalenessChecker.updateCachedHead();
-          }
-          break;
-      }
-    });
-
-    // Start watching for git changes (poll every 5 seconds)
-    this.gitSyncManager.startWatching(5000);
-  }
-
-  private async handleHistoryRewrite(change: GitChangeInfo): Promise<void> {
-    // When history is rewritten (reset, revert, rebase), we need to:
-    // 1. Reindex all affected files
-    // 2. The file watcher may not catch all changes if files reverted to previous state
-
-    if (change.changedFiles.length > 0) {
-      // Reindex specific changed files
-      console.error(`[GitSync] Reindexing ${change.changedFiles.length} files after history rewrite`);
-      for (const file of change.changedFiles) {
-        try {
-          // Force reindex by invalidating and re-indexing
-          await this.indexer.indexFile(file);
-        } catch (err) {
-          // File may have been deleted in the rewrite
-          console.error(`[GitSync] Could not reindex ${file}: ${err}`);
-        }
-      }
-    } else {
-      // No specific files detected, do a full reindex to be safe
-      console.error('[GitSync] No specific files detected, triggering full reindex');
-      await this.forceFullReindex();
-    }
-
-    // Update staleness checker
-    this.gitStalenessChecker.updateCachedHead();
-
-    // Log activity
-    this.livingDocs.getActivityTracker().logActivity(
-      'git_history_rewrite',
-      `Git history rewritten: ${change.commitsRemoved} commits removed, ${change.changedFiles.length} files affected`,
-      undefined,
-      { type: change.type, commitsRemoved: change.commitsRemoved, filesAffected: change.changedFiles.length }
-    );
-  }
-
-  private async handleBranchSwitch(change: GitChangeInfo): Promise<void> {
-    // Branch switch - potentially all files are different
-    console.error(`[GitSync] Switched from ${change.previousBranch || 'detached'} to ${change.currentBranch || 'detached'}`);
-
-    if (change.changedFiles.length > 0 && change.changedFiles.length < 100) {
-      // Reasonable number of changed files, reindex them
-      console.error(`[GitSync] Reindexing ${change.changedFiles.length} files after branch switch`);
-      for (const file of change.changedFiles) {
-        try {
-          await this.indexer.indexFile(file);
-        } catch (err) {
-          // File may not exist on this branch
-        }
-      }
-    } else {
-      // Too many files or couldn't detect - full reindex
-      console.error('[GitSync] Full reindex after branch switch');
-      await this.forceFullReindex();
-    }
-
-    // Update staleness checker
-    this.gitStalenessChecker.updateCachedHead();
-
-    // Log activity
-    this.livingDocs.getActivityTracker().logActivity(
-      'git_branch_switch',
-      `Switched branch: ${change.previousBranch || 'detached'} → ${change.currentBranch || 'detached'}`,
-      undefined,
-      { from: change.previousBranch, to: change.currentBranch, filesAffected: change.changedFiles.length }
-    );
-  }
-
-  private async forceFullReindex(): Promise<void> {
-    // Trigger a full reindex by re-running initial index
-    console.error('[GitSync] Performing full reindex...');
-    await this.indexer.performInitialIndex();
-    console.error('[GitSync] Full reindex complete');
-  }
+  // Git sync methods delegated to GitSyncCoordinator
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -623,72 +532,21 @@ export class CodeImpactEngine {
    * Only syncs if HEAD has changed, otherwise returns 0
    */
   syncGitChanges(limit: number = 20): number {
-    // Record activity
-    this.activityGate.recordActivity();
-
-    try {
-      // Cheap pre-check: has HEAD changed?
-      if (!this.gitStalenessChecker.hasNewCommits()) {
-        return 0; // No new commits, skip expensive sync
-      }
-
-      const synced = this.changeIntelligence.syncFromGit(limit);
-      if (synced > 0) {
-        // Also scan for bug fixes when syncing
-        this.changeIntelligence.scanForBugFixes();
-      }
-      return synced;
-    } catch {
-      return 0;
-    }
+    return this.gitSyncCoordinator.syncGitChanges(limit);
   }
 
-  /**
-   * Force sync git changes, bypassing the staleness check
-   */
   forceSyncGitChanges(limit: number = 20): number {
-    this.activityGate.recordActivity();
-    this.gitStalenessChecker.updateCachedHead();
-
-    try {
-      const synced = this.changeIntelligence.syncFromGit(limit);
-      if (synced > 0) {
-        this.changeIntelligence.scanForBugFixes();
-      }
-      return synced;
-    } catch {
-      return 0;
-    }
+    return this.gitSyncCoordinator.forceSyncGitChanges(limit);
   }
 
-  /**
-   * Trigger a full refresh of the memory layer
-   * Syncs git changes, updates importance scores, etc.
-   */
   triggerRefresh(): {
     gitSynced: number;
     importanceUpdated: boolean;
     tasksExecuted: string[];
   } {
-    this.activityGate.recordActivity();
-
-    // Force git sync
-    this.gitStalenessChecker.updateCachedHead();
-    const gitSynced = this.forceSyncGitChanges();
-
-    // Update importance scores
-    this.learningEngine.updateImportanceScores();
-
-    return {
-      gitSynced,
-      importanceUpdated: true,
-      tasksExecuted: ['git-sync', 'importance-update']
-    };
+    return this.gitSyncCoordinator.triggerRefresh();
   }
 
-  /**
-   * Get refresh system status
-   */
   getRefreshStatus(): {
     lastActivity: number;
     isIdle: boolean;
@@ -701,20 +559,7 @@ export class CodeImpactEngine {
       readyToRun: boolean;
     }>;
   } {
-    const status = this.activityGate.getStatus();
-
-    return {
-      lastActivity: this.activityGate.getLastActivity(),
-      isIdle: status.isIdle,
-      idleDuration: status.idleDuration,
-      gitHead: this.gitStalenessChecker.getCachedHead(),
-      hasNewCommits: this.gitStalenessChecker.hasNewCommits(),
-      idleTasks: status.tasks.map(t => ({
-        name: t.name,
-        lastRun: t.lastRun,
-        readyToRun: t.readyToRun
-      }))
-    };
+    return this.gitSyncCoordinator.getRefreshStatus();
   }
 
   /**
@@ -732,6 +577,10 @@ export class CodeImpactEngine {
     }
   }
 
+  /**
+   * Assemble context for a query. Async because it generates embeddings
+   * (via Transformers.js) before querying synchronous SQLite storage.
+   */
   async getContext(query: string, currentFile?: string, maxTokens?: number): Promise<AssembledContext> {
     // Record activity for refresh system
     this.activityGate.recordActivity();
@@ -761,6 +610,10 @@ export class CodeImpactEngine {
     return result;
   }
 
+  /**
+   * Search the codebase. Async because embedding generation is async
+   * (Transformers.js), while the SQLite search itself is synchronous.
+   */
   async searchCodebase(query: string, limit: number = 10): Promise<SearchResult[]> {
     this.activityGate.recordActivity();
     const embedding = await this.indexer.getEmbeddingGenerator().embed(query);
@@ -1142,121 +995,42 @@ export class CodeImpactEngine {
   }
 
   // ========== Phase 4: Multi-Project & Team Features ==========
+  // Delegated to MultiProjectCoordinator
 
-  // Get all registered projects
   listProjects(): ProjectInfo[] {
-    return this.projectManager.listProjects();
+    return this.multiProjectCoordinator.listProjects();
   }
 
-  // Get current active project
   getActiveProject(): ProjectInfo | null {
-    return this.projectManager.getActiveProject();
+    return this.multiProjectCoordinator.getActiveProject();
   }
 
-  // Get project by ID
   getProject(projectId: string): ProjectInfo | null {
-    return this.projectManager.getProject(projectId);
+    return this.multiProjectCoordinator.getProject(projectId);
   }
 
-  // Switch to a different project
   switchProject(projectId: string): boolean {
-    return this.projectManager.setActiveProject(projectId);
+    return this.multiProjectCoordinator.switchProject(projectId);
   }
 
-  // Discover projects in common locations
   discoverProjects(): string[] {
-    return this.projectManager.discoverProjects();
+    return this.multiProjectCoordinator.discoverProjects();
   }
 
-  // Cross-project search - search across all registered projects
   async searchAllProjects(query: string, limit: number = 10): Promise<Array<{
     project: string;
     projectId: string;
     results: SearchResult[];
   }>> {
-    const allResults: Array<{
-      project: string;
-      projectId: string;
-      results: SearchResult[];
-    }> = [];
-
-    const projectDbs = this.projectManager.getProjectDatabases();
-
-    try {
-      // Generate embedding for query
-      const embedding = await this.indexer.getEmbeddingGenerator().embed(query);
-
-      for (const { project, db } of projectDbs) {
-        try {
-          // Search each project's database
-          const tempTier2 = new Tier2Storage(db);
-          const results = tempTier2.search(embedding, limit);
-
-          if (results.length > 0) {
-            allResults.push({
-              project: project.name,
-              projectId: project.id,
-              results
-            });
-          }
-        } catch (err) {
-          console.error(`Error searching project ${project.name}:`, err);
-        }
-      }
-    } finally {
-      // Close all database connections
-      this.projectManager.closeAllDatabases(projectDbs);
-    }
-
-    // Sort by best match across projects
-    allResults.sort((a, b) => {
-      const maxA = Math.max(...a.results.map(r => r.similarity));
-      const maxB = Math.max(...b.results.map(r => r.similarity));
-      return maxB - maxA;
-    });
-
-    return allResults;
+    return this.multiProjectCoordinator.searchAllProjects(query, limit);
   }
 
-  // Cross-project decision search
   async searchAllDecisions(query: string, limit: number = 10): Promise<Array<{
     project: string;
     projectId: string;
     decisions: Decision[];
   }>> {
-    const allResults: Array<{
-      project: string;
-      projectId: string;
-      decisions: Decision[];
-    }> = [];
-
-    const projectDbs = this.projectManager.getProjectDatabases();
-
-    try {
-      // Generate embedding for query
-      const embedding = await this.indexer.getEmbeddingGenerator().embed(query);
-
-      for (const { project, db } of projectDbs) {
-        try {
-          const tempTier2 = new Tier2Storage(db);
-          const decisions = tempTier2.searchDecisions(embedding, limit);
-
-          if (decisions.length > 0) {
-            allResults.push({
-              project: project.name,
-              projectId: project.id,
-              decisions
-            });
-          }
-        } catch (err) {
-          console.error(`Error searching decisions in ${project.name}:`, err);
-        }
-      }
-    } finally {
-      this.projectManager.closeAllDatabases(projectDbs);
-    }
-
-    return allResults;
+    return this.multiProjectCoordinator.searchAllDecisions(query, limit);
   }
 
   // Record decision with author attribution
@@ -1399,69 +1173,41 @@ export class CodeImpactEngine {
   }
 
   // ========== Phase 6: Living Documentation ==========
+  // Delegated to LivingDocsCoordinator
 
-  // Get project architecture overview
   async getArchitecture(): Promise<ArchitectureDoc> {
-    return this.livingDocs.generateArchitectureDocs();
+    return this.livingDocsCoordinator.getArchitecture();
   }
 
-  // Get detailed documentation for a component/file
   async getComponentDoc(path: string): Promise<ComponentDoc> {
-    return this.livingDocs.generateComponentDoc(path);
+    return this.livingDocsCoordinator.getComponentDoc(path);
   }
 
-  // Get changelog of recent changes
   async getChangelog(options?: ChangelogOptions): Promise<DailyChangelog[]> {
-    return this.livingDocs.generateChangelog(options || {});
+    return this.livingDocsCoordinator.getChangelog(options);
   }
 
-  // Validate documentation status
   async validateDocs(): Promise<ValidationResult> {
-    return this.livingDocs.validateDocs();
+    return this.livingDocsCoordinator.validateDocs();
   }
 
-  // Query recent project activity
   async whatHappened(since: string, scope?: string): Promise<ActivityResult> {
-    return this.livingDocs.whatHappened(since, scope);
+    return this.livingDocsCoordinator.whatHappened(since, scope);
   }
 
-  // Find undocumented code
   async findUndocumented(options?: {
     importance?: 'low' | 'medium' | 'high' | 'all';
     type?: 'file' | 'function' | 'class' | 'interface' | 'all';
   }): Promise<UndocumentedItem[]> {
-    return this.livingDocs.findUndocumented(options);
+    return this.livingDocsCoordinator.findUndocumented(options);
   }
 
   getCachedArchitectureDoc(): any | null {
-    try {
-      const row = this.db.prepare(
-        `SELECT content FROM documentation WHERE file_id = 0 AND doc_type = 'architecture' ORDER BY generated_at DESC LIMIT 1`,
-      ).get() as { content: string } | undefined;
-      if (!row) return null;
-      return JSON.parse(row.content);
-    } catch {
-      return null;
-    }
+    return this.livingDocsCoordinator.getCachedArchitectureDoc();
   }
 
   getCachedDocValidation(): { score: number; outdatedDocs: any[]; undocumentedCode: any[] } | null {
-    try {
-      const row = this.db.prepare(
-        `SELECT content FROM documentation WHERE file_id = 0 AND doc_type = 'validation' ORDER BY generated_at DESC LIMIT 1`,
-      ).get() as { content: string } | undefined;
-      if (row) return JSON.parse(row.content);
-
-      const allDocs = this.db.prepare(
-        `SELECT COUNT(*) as total FROM documentation WHERE doc_type != 'validation'`,
-      ).get() as { total: number };
-      const totalDocs = allDocs?.total ?? 0;
-      if (totalDocs === 0) return null;
-
-      return { score: 50, outdatedDocs: [], undocumentedCode: [] };
-    } catch {
-      return null;
-    }
+    return this.livingDocsCoordinator.getCachedDocValidation();
   }
 
   getTopImportedModules(modulePattern: string, limit = 5): string[] {
@@ -1481,41 +1227,7 @@ export class CodeImpactEngine {
   }
 
   getCachedChangelog(): any[] | null {
-    try {
-      const row = this.db.prepare(
-        `SELECT content FROM documentation WHERE file_id = 0 AND doc_type = 'changelog' ORDER BY generated_at DESC LIMIT 1`,
-      ).get() as { content: string } | undefined;
-      if (row) return JSON.parse(row.content);
-
-      const recentChanges = this.changeIntelligence.getRecentChanges(168);
-      if (recentChanges.length === 0) return null;
-
-      const byDate = new Map<string, any[]>();
-      for (const c of recentChanges) {
-        const dateStr = c.timestamp instanceof Date
-          ? c.timestamp.toISOString().split('T')[0]!
-          : String(c.timestamp).split('T')[0]!;
-        const existing = byDate.get(dateStr);
-        if (existing) {
-          existing.push(c);
-        } else {
-          byDate.set(dateStr, [c]);
-        }
-      }
-
-      return Array.from(byDate.entries()).slice(0, 7).map(([date, changes]) => ({
-        date: new Date(date),
-        summary: `${changes.length} changes`,
-        features: [],
-        fixes: [],
-        refactors: changes.map((c: any) => ({
-          description: c.type || 'change',
-          files: [c.file],
-        })),
-      }));
-    } catch {
-      return null;
-    }
+    return this.livingDocsCoordinator.getCachedChangelog();
   }
 
   // ========== Skill Evolution ==========
@@ -2368,7 +2080,7 @@ export class CodeImpactEngine {
   shutdown(): void {
     console.error('Shutting down CodeImpact...');
     this.indexer.stopWatching();
-    this.gitSyncManager.stopWatching();
+    this.gitSyncCoordinator.shutdown();
     this.activityGate.shutdown();
     this.tier1.save();
     this.featureContextManager.shutdown();

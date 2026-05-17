@@ -12,6 +12,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { computeContentHash } from './git-operations.js';
+import { estimateTokens } from '../../utils/token-counter.js';
 import type { MarkerConfig } from './types.js';
 
 // ============================================================================
@@ -214,10 +215,3 @@ function replaceAutoSection(
   return `${before}\n${newAutoContent.trim()}\n${after}`;
 }
 
-// ============================================================================
-// Utilities
-// ============================================================================
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
