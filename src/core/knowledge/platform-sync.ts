@@ -23,16 +23,33 @@ function updateSection(existing: string, section: string): { content: string; ch
     return { content: `${block}\n`, changed: true };
   }
 
-  const start = existing.indexOf(START_MARKER);
-  const end = existing.indexOf(END_MARKER);
-  if (start >= 0 && end > start) {
-    const before = existing.slice(0, start).trimEnd();
-    const after = existing.slice(end + END_MARKER.length).trimStart();
-    const content = `${before}\n\n${block}\n\n${after}`.trim() + '\n';
-    return { content, changed: content !== existing };
+  // Strip ALL existing marker blocks (handles accumulated duplicates)
+  let cleaned = existing;
+  let hadMarkers = false;
+  while (true) {
+    const start = cleaned.indexOf(START_MARKER);
+    const end = cleaned.indexOf(END_MARKER, start >= 0 ? start : 0);
+    if (start >= 0 && end > start) {
+      hadMarkers = true;
+      cleaned = cleaned.slice(0, start) + cleaned.slice(end + END_MARKER.length);
+    } else if (end >= 0 && start < 0) {
+      // Orphan end marker — remove it
+      hadMarkers = true;
+      cleaned = cleaned.slice(0, end) + cleaned.slice(end + END_MARKER.length);
+    } else {
+      break;
+    }
   }
 
-  const content = `${existing.trimEnd()}\n\n${block}\n`;
+  // Clean up excessive whitespace from removals
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+  let content: string;
+  if (!cleaned) {
+    content = `${block}\n`;
+  } else {
+    content = `${cleaned}\n\n${block}\n`;
+  }
   return { content, changed: content !== existing };
 }
 
@@ -77,94 +94,62 @@ function renderPlatformSection(
   let attentionSection = '';
   if (evolutionGuidance && evolutionGuidance.length > 0) {
     attentionSection = `
-
 ### Skills Needing Attention
 ${evolutionGuidance.map((g) => `- ${g}`).join('\n')}`;
   }
 
-  return `# CodeImpact Knowledge System
+  return `# CodeImpact — AI-Powered Codebase Intelligence
 
-You are part of a **self-improving knowledge system**. Skills you create persist across sessions. Future AI sessions benefit from the knowledge you build now.
+You have access to **CodeImpact**, a persistent knowledge system that understands this codebase. It provides project skills, architecture knowledge, and self-learning agents.
 
-## Tools
+## IMPORTANT: Session Start
+
+1. **Read project knowledge** before making changes:
+   - \`.code-impact/project/SKILL.md\` — Tech stack, architecture, key directories
+   - \`.code-impact/project/CONVENTIONS.md\` — Coding standards and patterns
+   - \`.code-impact/project/ARCHITECTURE.md\` — System layers and data flow
+2. **Read feature knowledge** for the files you're modifying:
+   - \`.code-impact/features/{feature}/SKILL.md\` — Feature-specific rules, pitfalls, and research refs
+   - Features: check \`.code-impact/features/\` for available feature directories
+3. Run \`${tool('memory_status')}\` for project overview and recent changes
+
+## MCP Tools (Use FIRST before built-in tools)
+
 | Task | Tool |
 |------|------|
-| Find code | \`${tool('memory_query')}\` |
-| Check code | \`${tool('memory_review')}\` |
-| Verify code | \`${tool('memory_verify')}\` |
+| Search code semantically | \`${tool('memory_query')}\` |
+| Review code before changes | \`${tool('memory_review')}\` |
+| Verify before committing | \`${tool('memory_verify')}\` |
 | Project status | \`${tool('memory_status')}\` |
 | Impact analysis | \`${tool('memory_blast_radius')}\` |
+| Agent system | \`${tool('memory_agents')}\` |
 | Build knowledge | \`${tool('memory_evolve')}\` |
 
-## Session Start
-1. Run \`${tool('memory_status')}\` — check \`knowledge_gaps\` for uncovered technologies and high-risk files.
-2. Read relevant skills from \`knowledge/skills/\` for the current task.
+## Agent System
 
-## Skill Creation Protocol
+This project has feature-level agents in \`.code-impact/features/\`. Each agent has:
+- **SKILL.md** — Rules, pitfalls, and technology-specific guidance
+- **AGENT.md** — Scope, allowed tools, and lessons learned from past mistakes
 
-**After completing any task involving 3+ files**, create or improve a skill.
+Before modifying files, check the relevant feature's SKILL.md for rules and pitfalls.
+After completing a task, record the outcome via \`${tool('memory_agents')}\` with action="record_outcome".
 
-### To create a new skill:
-\`${tool('memory_evolve')}\` with:
-- action="create_skill"
-- name="technology-or-area-name" (slug format)
-- description="One line: when to use this skill"
-- scope="technology|feature|risk|core"
-- content="Full markdown body (see format below)"
+## Skill Management
 
-### To improve an existing skill:
-\`${tool('memory_evolve')}\` with:
-- action="improve_skill", skill_id="skill-name"
-- Patch mode: old_text="exact text to replace", new_text="replacement"
-- Append mode: section="pitfalls", content="New pitfall to add"
+After completing any task involving 3+ files, create or improve a skill:
 
-### To discover gaps:
-\`${tool('memory_evolve')}\` with action="list_signals"
-
-### Skill Format (agentskills.io SKILL.md)
-
-\`\`\`markdown
----
-name: better-sqlite3-patterns
-description: Synchronous database patterns. Use when working with database queries or schema changes.
-version: 1.0
-metadata:
-  scope: technology
-  created_by: ai
----
-
-# better-sqlite3 Patterns
-
-## When to Use
-When modifying database queries, adding tables, or working with files that import from src/storage/database.ts.
-
-## Key Facts
-- Database: .codeimpact/codeimpact.db (SQLite, WAL mode)
-- API: better-sqlite3 (synchronous, NOT async)
-
-## Rules
-- ALL database access goes through database.ts — never import better-sqlite3 directly.
-- Use db.prepare().all() for SELECT, db.prepare().run() for INSERT/UPDATE/DELETE.
-
-## Pitfalls
-- db.exec() returns nothing. If you use it for SELECT, you get undefined.
-- better-sqlite3 is synchronous. Do NOT wrap in async/await.
-
-## Verification
-- npx tsc --noEmit passes with no type errors on database code.
-\`\`\`
+\`${tool('memory_evolve')}\` with action="create_skill" (new) or action="improve_skill" (update)
 
 ### Quality Rules
-- **Under 5000 tokens** per skill
-- **Be specific**: "Use db.prepare().all() for SELECT" not "follow project patterns"
-- **Pitfalls with symptoms**: "you'll get undefined" not "don't misuse"
-- **Every line earns its tokens** — no filler, no generic advice the AI already knows
+- Under 5000 tokens per skill
+- Be specific: "Use db.prepare().all() for SELECT" not "follow project patterns"
+- Include pitfalls with symptoms: "you'll get undefined" not "don't misuse"
 
 ## Existing Skills
 ${skillList}
 ${attentionSection}
 
-## Workspace
+## Knowledge Workspace
 \`${paths.root.replace(/\\/g, '/')}\``;
 }
 

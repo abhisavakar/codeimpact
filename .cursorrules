@@ -1,59 +1,55 @@
-# CodeImpact Integration
+<!-- codeimpact:knowledge:start -->
+# CodeImpact — AI-Powered Codebase Intelligence
 
-CodeImpact provides intelligent code analysis. **Use these MCP tools FIRST** before falling back to built-in tools.
+You have access to **CodeImpact**, a persistent knowledge system that understands this codebase. It provides project skills, architecture knowledge, and self-learning agents.
 
-## Tool Preferences (IMPORTANT)
+## IMPORTANT: Session Start
 
-1. **For code searches and questions about the codebase:**
-   - Use `mcp_codeimpact_memory_query` FIRST (semantic search, returns relevant context)
-   - Only fall back to file search if CodeImpact returns no results
+1. **Read project knowledge** before making changes:
+   - `.code-impact/project/SKILL.md` — Tech stack, architecture, key directories
+   - `.code-impact/project/CONVENTIONS.md` — Coding standards and patterns
+   - `.code-impact/project/ARCHITECTURE.md` — System layers and data flow
+2. **Read feature knowledge** for the files you're modifying:
+   - `.code-impact/features/{feature}/SKILL.md` — Feature-specific rules, pitfalls, and research refs
+   - Features: check `.code-impact/features/` for available feature directories
+3. Run `mcp_codeimpact_memory_status` for project overview and recent changes
 
-2. **Before writing or suggesting code changes:**
-   - Run `mcp_codeimpact_memory_review` to check against patterns, past decisions, and potential conflicts
-   - This catches hallucinated imports, duplicate functions, and pattern violations
-
-3. **Before finalizing/committing code:**
-   - Run `mcp_codeimpact_memory_verify` for pre-commit quality checks
-   - Catches security issues, missing dependencies, and import errors
-
-4. **At session start:**
-   - Run `mcp_codeimpact_memory_status` to get project overview and recent changes
-
-5. **For impact analysis:**
-   - Use `mcp_codeimpact_memory_blast_radius` to analyze risk of changing a file
-   - Shows affected files, critical paths, and recommendations
-
-## Why Use CodeImpact Tools?
-
-- **Semantic search**: Understands intent, not just keywords
-- **Pattern awareness**: Knows project conventions and enforces them
-- **Decision memory**: Remembers past architectural decisions
-- **Import validation**: Catches hallucinated imports before they break builds
-- **Blast radius**: Understand impact and risk before making changes
-
-## Quick Reference
+## MCP Tools (Use FIRST before built-in tools)
 
 | Task | Tool |
 |------|------|
-| Find code | `mcp_codeimpact_memory_query` |
-| Check code | `mcp_codeimpact_memory_review` |
-| Verify code | `mcp_codeimpact_memory_verify` |
+| Search code semantically | `mcp_codeimpact_memory_query` |
+| Review code before changes | `mcp_codeimpact_memory_review` |
+| Verify before committing | `mcp_codeimpact_memory_verify` |
 | Project status | `mcp_codeimpact_memory_status` |
-| Save decision | `mcp_codeimpact_memory_record` |
 | Impact analysis | `mcp_codeimpact_memory_blast_radius` |
+| Agent system | `mcp_codeimpact_memory_agents` |
+| Build knowledge | `mcp_codeimpact_memory_evolve` |
 
-## CLI Commands
+## Agent System
 
-```bash
-# Find unused exports and dead code
-codeimpact deadcode
+This project has feature-level agents in `.code-impact/features/`. Each agent has:
+- **SKILL.md** — Rules, pitfalls, and technology-specific guidance
+- **AGENT.md** — Scope, allowed tools, and lessons learned from past mistakes
 
-# Find which tests to run for changed files
-codeimpact test-impact --changed src/file.ts
+Before modifying files, check the relevant feature's SKILL.md for rules and pitfalls.
+After completing a task, record the outcome via `mcp_codeimpact_memory_agents` with action="record_outcome".
 
-# Analyze blast radius and risk of changing a file
-codeimpact impact src/core/engine.ts
+## Skill Management
 
-# View token usage statistics
-codeimpact stats
-```
+After completing any task involving 3+ files, create or improve a skill:
+
+`mcp_codeimpact_memory_evolve` with action="create_skill" (new) or action="improve_skill" (update)
+
+### Quality Rules
+- Under 5000 tokens per skill
+- Be specific: "Use db.prepare().all() for SELECT" not "follow project patterns"
+- Include pitfalls with symptoms: "you'll get undefined" not "don't misuse"
+
+## Existing Skills
+- No skills yet — create your first after completing a task
+
+
+## Knowledge Workspace
+`E:/Coding/fullstackoverweekend/codeimpact/knowledge`
+<!-- codeimpact:knowledge:end -->

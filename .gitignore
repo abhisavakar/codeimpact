@@ -55,8 +55,8 @@ AGENTS.md
 CODEX.md
 Cloud.md
 
-# Knowledge workspace (runtime generated)
-knowledge/
+# Knowledge workspace (runtime generated, root-level only)
+/knowledge/
 
 # Internal documentation
 # (doc/ is intentionally committed)

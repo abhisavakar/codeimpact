@@ -113,7 +113,9 @@ function findSubPackageJsons(projectPath: string): string[] {
       const entries = readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
-        if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue;
+        const lower = entry.name.toLowerCase();
+        if (lower === 'node_modules' || lower === '.git' || lower === 'dist') continue;
+        if (EXCLUDED_FEATURE_DIRS.has(lower)) continue;
 
         const subDir = join(dir, entry.name);
         const pkgJson = join(subDir, 'package.json');
@@ -251,19 +253,29 @@ function detectCohesionFeatures(
   return features;
 }
 
+/** Top-level directories that ARE valid source features (non-src roots) */
+const SOURCE_TOP_DIRS = new Set([
+  'src', 'app', 'apps', 'packages', 'services', 'modules',
+  'test', 'tests', 'spec', 'e2e',
+  'api', 'lib', 'cmd', 'internal', 'pkg',
+]);
+
 function groupByDirectory(files: string[], projectPath: string): Map<string, string[]> {
   const groups = new Map<string, string[]>();
 
   for (const file of files) {
-    // Get the first meaningful directory level (e.g., src/auth → auth)
     const parts = file.split('/');
     let dirKey: string;
 
-    // Find src-level directories
+    // Find src-level directories (src/core, src/server, etc.)
     const srcIdx = parts.indexOf('src');
     if (srcIdx >= 0 && parts.length > srcIdx + 2) {
       dirKey = parts.slice(0, srcIdx + 2).join('/');
     } else if (parts.length >= 2 && parts[0]) {
+      // Top-level dir — only allow recognized source directories
+      const topDir = parts[0].toLowerCase();
+      if (EXCLUDED_FEATURE_DIRS.has(topDir)) continue;
+      if (!SOURCE_TOP_DIRS.has(topDir)) continue;
       dirKey = parts[0];
     } else {
       continue; // Root-level files don't form features
@@ -415,8 +427,29 @@ const UTILITY_DIRS = new Set([
   'assets', 'static', 'public', 'vendor', 'third-party',
 ]);
 
+/** Top-level directories that should never become features */
+const EXCLUDED_FEATURE_DIRS = new Set([
+  // Runtime-generated / workspace
+  'knowledge', '.code-impact', '.codeimpact', '.claude', '.cursor',
+  // Documentation
+  'doc', 'docs', 'documentation',
+  // Build / output
+  'dist', 'build', 'out', '.next', '.nuxt', '.output',
+  // Dependencies
+  'node_modules', '.yarn', '.pnpm-store',
+  // CI / config
+  '.github', '.gitlab', '.circleci', 'scripts', '.husky',
+  // Test fixtures (not features themselves)
+  'fixtures', 'base', '__fixtures__', '__snapshots__',
+  // Data / migrations
+  'migrations', 'seeds', 'data',
+  // IDE / editor
+  '.vscode', '.idea',
+]);
+
 function isUtilityDir(dirName: string): boolean {
-  return UTILITY_DIRS.has(dirName.toLowerCase());
+  const lower = dirName.toLowerCase();
+  return UTILITY_DIRS.has(lower) || EXCLUDED_FEATURE_DIRS.has(lower);
 }
 
 function slugify(name: string): string {

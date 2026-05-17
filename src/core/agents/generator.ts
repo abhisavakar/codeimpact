@@ -307,8 +307,10 @@ function renderFeatureSkill(
     lines.push(`- ${p}`);
   }
   if (feature.testFiles.length > 0) {
-    for (const tf of feature.testFiles) {
-      lines.push(`- ${tf}`);
+    // Summarize test files as globs instead of listing individually
+    const testGlobs = summarizeTestFiles(feature.testFiles);
+    for (const tg of testGlobs) {
+      lines.push(`- ${tg}`);
     }
   }
   lines.push('');
@@ -433,6 +435,30 @@ function parseAutoContentSections(autoContent: string): MarkedSection[] {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/** Summarize test files into compact glob patterns */
+function summarizeTestFiles(testFiles: string[]): string[] {
+  if (testFiles.length === 0) return [];
+
+  const dirCounts = new Map<string, number>();
+  for (const tf of testFiles) {
+    const parts = tf.split('/');
+    const dir = parts.slice(0, -1).join('/');
+    dirCounts.set(dir, (dirCounts.get(dir) || 0) + 1);
+  }
+
+  const globs: string[] = [];
+  for (const [dir, count] of dirCounts) {
+    if (count >= 2) {
+      globs.push(`${dir}/**`);
+    } else {
+      const file = testFiles.find(f => f.startsWith(dir + '/'));
+      if (file) globs.push(file);
+    }
+  }
+
+  return globs;
+}
 
 function inferDirPurpose(dirName: string): string {
   const purposes: Record<string, string> = {
@@ -584,22 +610,41 @@ const TECH_KNOWLEDGE: Record<string, TechKnowledge> = {
   },
 };
 
+/** Well-known feature names that should use name-based rules as primary */
+const WELL_KNOWN_FEATURES = new Set([
+  'server', 'storage', 'indexing', 'core', 'test', 'knowledge', 'doc',
+  'auth', 'api', 'billing', 'cli',
+]);
+
 /** Derive context-aware rules based on feature name and technologies */
 function deriveRules(feature: DetectedFeature, technologies: DetectedTechnology[]): string[] {
   const rules: string[] = [];
 
-  // Technology-specific rules
-  for (const tech of technologies) {
-    const knowledge = TECH_KNOWLEDGE[tech.name];
-    if (knowledge) {
-      rules.push(...knowledge.rules);
-    }
-  }
+  // Well-known features: use name-based rules first, then supplement with tech rules
+  if (WELL_KNOWN_FEATURES.has(feature.name)) {
+    rules.push(...getFeatureNameRules(feature.name));
 
-  // Feature-name-based rules (when no tech-specific rules available)
-  if (rules.length === 0) {
-    const featureRules = getFeatureNameRules(feature.name);
-    rules.push(...featureRules);
+    // Add tech rules that aren't redundant (limit to 2 extra)
+    const techRules: string[] = [];
+    for (const tech of technologies) {
+      const knowledge = TECH_KNOWLEDGE[tech.name];
+      if (knowledge) techRules.push(...knowledge.rules);
+    }
+    // Only add non-duplicate tech rules, capped
+    for (const tr of techRules.slice(0, 2)) {
+      if (!rules.some(r => r.includes(tr.split(' ')[0] || ''))) {
+        rules.push(tr);
+      }
+    }
+  } else {
+    // Unknown feature: use tech rules first, fallback to generic
+    for (const tech of technologies) {
+      const knowledge = TECH_KNOWLEDGE[tech.name];
+      if (knowledge) rules.push(...knowledge.rules);
+    }
+    if (rules.length === 0) {
+      rules.push(...getFeatureNameRules(feature.name));
+    }
   }
 
   // Always add scope awareness
@@ -615,17 +660,25 @@ function deriveRules(feature: DetectedFeature, technologies: DetectedTechnology[
 function derivePitfalls(feature: DetectedFeature, technologies: DetectedTechnology[]): string[] {
   const pitfalls: string[] = [];
 
-  for (const tech of technologies) {
-    const knowledge = TECH_KNOWLEDGE[tech.name];
-    if (knowledge) {
-      pitfalls.push(...knowledge.pitfalls);
+  // Well-known features: use name-based pitfalls first, supplement with tech
+  if (WELL_KNOWN_FEATURES.has(feature.name)) {
+    pitfalls.push(...getFeatureNamePitfalls(feature.name));
+    for (const tech of technologies) {
+      const knowledge = TECH_KNOWLEDGE[tech.name];
+      if (knowledge) {
+        for (const p of knowledge.pitfalls.slice(0, 1)) {
+          if (!pitfalls.includes(p)) pitfalls.push(p);
+        }
+      }
     }
-  }
-
-  // Feature-name-based pitfalls when no tech knowledge
-  if (pitfalls.length === 0) {
-    const featurePitfalls = getFeatureNamePitfalls(feature.name);
-    pitfalls.push(...featurePitfalls);
+  } else {
+    for (const tech of technologies) {
+      const knowledge = TECH_KNOWLEDGE[tech.name];
+      if (knowledge) pitfalls.push(...knowledge.pitfalls);
+    }
+    if (pitfalls.length === 0) {
+      pitfalls.push(...getFeatureNamePitfalls(feature.name));
+    }
   }
 
   return pitfalls;

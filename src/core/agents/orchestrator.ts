@@ -471,6 +471,8 @@ function createMinimalIntelligence(
       layers,
       dataFlow: inferDataFlow(features),
       keyComponents: [],
+      patternCategories: {},
+      topPatterns: [],
       functionStats: { total: 0, exported: 0 },
     },
     dependencyHotspots: [],

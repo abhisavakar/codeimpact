@@ -108,7 +108,7 @@ function buildFeatureAgentDefinition(feature: DetectedFeature): AgentDefinition 
       created_by: 'code-impact',
     },
     scope: {
-      includedPaths: [...feature.paths, ...feature.testFiles],
+      includedPaths: [...feature.paths, ...deriveTestGlobs(feature)],
       excludedPaths: feature.paths.map(p => p.replace('/**', '/__mocks__/**')),
     },
     allowedTools: [
@@ -329,6 +329,36 @@ function renderAgentsShim(agents: AgentDefinition[], config: AgentConfig): strin
 // ============================================================================
 // Agent Definition Parser (for reading existing AGENT.md files)
 // ============================================================================
+
+/**
+ * Derive test glob patterns from individual test files.
+ * Instead of listing every test file, produce compact globs like "test/agents/*.test.ts".
+ */
+function deriveTestGlobs(feature: DetectedFeature): string[] {
+  if (feature.testFiles.length === 0) return [];
+
+  // Group test files by directory
+  const dirCounts = new Map<string, number>();
+  for (const tf of feature.testFiles) {
+    const parts = tf.split('/');
+    const dir = parts.slice(0, -1).join('/');
+    dirCounts.set(dir, (dirCounts.get(dir) || 0) + 1);
+  }
+
+  // Convert to globs
+  const globs: string[] = [];
+  for (const [dir, count] of dirCounts) {
+    if (count >= 2) {
+      globs.push(`${dir}/**`);
+    } else {
+      // Single file — find it and use it directly
+      const file = feature.testFiles.find(f => f.startsWith(dir + '/'));
+      if (file) globs.push(file);
+    }
+  }
+
+  return globs;
+}
 
 export function parseAgentMd(content: string): AgentDefinition | null {
   try {
