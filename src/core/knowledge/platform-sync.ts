@@ -170,7 +170,6 @@ export class PlatformRuleSync {
 
     const claudeSection = renderPlatformSection('claude', paths, skillIndex, guidance);
     results.push(writeManagedFile(join(this.projectPath, 'CLAUDE.md'), claudeSection, options));
-    results.push(writeManagedFile(join(this.projectPath, 'Cloud.md'), claudeSection, options));
 
     const codexSection = renderPlatformSection('codex', paths, skillIndex, guidance);
     results.push(writeManagedFile(join(this.projectPath, 'AGENTS.md'), codexSection, options));

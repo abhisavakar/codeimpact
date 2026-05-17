@@ -53,7 +53,6 @@ opencode.json
 # Generated IDE instruction files
 AGENTS.md
 CODEX.md
-Cloud.md
 
 # Knowledge workspace (runtime generated, root-level only)
 /knowledge/
