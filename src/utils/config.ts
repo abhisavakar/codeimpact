@@ -13,7 +13,7 @@ export function getDefaultConfig(projectPath: string): CodeImpactConfig {
     watchIgnore: [
       // ===== CodeImpact =====
       '**/.codeimpact/**',
-      '**/.codeimpact/**',
+      '**/knowledge/**',
 
       // ===== Version Control =====
       '**/.git/**',

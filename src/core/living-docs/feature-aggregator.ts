@@ -120,8 +120,13 @@ ${decisionList}
         `SELECT path FROM files WHERE language IS NOT NULL`,
       ).all() as Array<{ path: string }>;
 
+      // Exclude generated output dirs to prevent recursive doc nesting
+      const excludeDirs = ['knowledge/', '.code-impact/', 'node_modules/', 'venv/', '.venv/', 'env/', '__pycache__/'];
+
       for (const row of rows) {
-        const parts = row.path.replace(/\\/g, '/').split('/');
+        const normalized = row.path.replace(/\\/g, '/');
+        if (excludeDirs.some(d => normalized.includes(d))) continue;
+        const parts = normalized.split('/');
         if (parts.length < 2) continue;
         const dir = parts.slice(0, -1).join('/');
         const existing = groups.get(dir) || [];

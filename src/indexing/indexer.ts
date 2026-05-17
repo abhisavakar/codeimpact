@@ -116,7 +116,7 @@ export class Indexer extends EventEmitter {
         language,
         stats.size,
         lineCount,
-        Math.floor(stats.mtimeMs)
+        Math.floor(stats.mtimeMs / 1000)
       );
 
       // Generate and store embedding
@@ -154,7 +154,7 @@ export class Indexer extends EventEmitter {
           if (parsed.imports.length > 0) {
             this.tier2.clearDependencies(fileId);
             for (const imp of parsed.imports) {
-              const targetFile = this.tier2.resolveImportToFile(relativePath, imp.importedFrom);
+              const targetFile = this.tier2.resolveImportToFile(relativePath, imp.importedFrom, this.config.projectPath);
               if (targetFile) {
                 this.tier2.addDependency(fileId, targetFile.id, 'imports');
               }

@@ -141,7 +141,11 @@ export class DecisionExtractor {
 
     // Find all code files
     const patterns = ['**/*.ts', '**/*.js', '**/*.py', '**/*.go', '**/*.java', '**/*.rs'];
-    const ignorePatterns = ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**'];
+    const ignorePatterns = [
+      '**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**',
+      '**/venv/**', '**/.venv/**', '**/env/**', '**/__pycache__/**',
+      '**/vendor/**', '**/knowledge/**',
+    ];
 
     for (const pattern of patterns) {
       try {
@@ -204,7 +208,7 @@ export class DecisionExtractor {
       try {
         const files = await glob(pattern, {
           cwd: this.projectPath,
-          ignore: ['**/node_modules/**'],
+          ignore: ['**/node_modules/**', '**/venv/**', '**/.venv/**', '**/env/**', '**/knowledge/**'],
           absolute: true,
           nodir: true
         });

@@ -195,23 +195,32 @@ function parseYarnLock(lockPath: string): DetectedTechnology[] {
 function detectFromManifests(projectPath: string): DetectedTechnology[] {
   const techs: DetectedTechnology[] = [];
 
-  // package.json
-  const pkgPath = join(projectPath, 'package.json');
-  if (existsSync(pkgPath)) {
-    try {
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-      const allDeps = {
-        ...pkg.dependencies,
-        ...pkg.devDependencies,
-      };
-      for (const [name, versionRange] of Object.entries(allDeps) as [string, string][]) {
-        techs.push({
-          name,
-          version: cleanSemverRange(versionRange),
-          source: 'package.json',
-        });
-      }
-    } catch { /* ignore */ }
+  // package.json (root + common subfolders for monorepo support)
+  const pkgPaths = [
+    join(projectPath, 'package.json'),
+    ...['frontend', 'backend', 'client', 'server', 'web', 'app'].map(d => join(projectPath, d, 'package.json')),
+  ];
+  const seenPkgs = new Set<string>();
+  for (const pkgPath of pkgPaths) {
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+        const allDeps = {
+          ...pkg.dependencies,
+          ...pkg.devDependencies,
+        };
+        for (const [name, versionRange] of Object.entries(allDeps) as [string, string][]) {
+          if (!seenPkgs.has(name)) {
+            seenPkgs.add(name);
+            techs.push({
+              name,
+              version: cleanSemverRange(versionRange),
+              source: 'package.json',
+            });
+          }
+        }
+      } catch { /* ignore */ }
+    }
   }
 
   // requirements.txt (Python)

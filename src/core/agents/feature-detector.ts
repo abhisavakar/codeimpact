@@ -435,8 +435,9 @@ const EXCLUDED_FEATURE_DIRS = new Set([
   'doc', 'docs', 'documentation',
   // Build / output
   'dist', 'build', 'out', '.next', '.nuxt', '.output',
-  // Dependencies
+  // Dependencies / virtual environments
   'node_modules', '.yarn', '.pnpm-store',
+  'venv', '.venv', 'env', 'virtualenv', 'ENV',
   // CI / config
   '.github', '.gitlab', '.circleci', 'scripts', '.husky',
   // Test fixtures (not features themselves)

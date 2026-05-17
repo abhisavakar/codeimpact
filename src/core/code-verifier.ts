@@ -330,6 +330,8 @@ export class CodeVerifier {
     this.loadPackageJson();
   }
 
+  private subPackageJsons: Record<string, unknown>[] = [];
+
   private loadPackageJson(): void {
     const packageJsonPath = join(this.projectPath, 'package.json');
     if (existsSync(packageJsonPath)) {
@@ -337,6 +339,17 @@ export class CodeVerifier {
         this.packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
       } catch {
         this.packageJson = null;
+      }
+    }
+
+    // Also load subfolder package.json files (monorepo support)
+    const subDirs = ['frontend', 'backend', 'client', 'server', 'web', 'app', 'packages'];
+    for (const sub of subDirs) {
+      const subPath = join(this.projectPath, sub, 'package.json');
+      if (existsSync(subPath)) {
+        try {
+          this.subPackageJsons.push(JSON.parse(readFileSync(subPath, 'utf-8')));
+        } catch { /* ignore */ }
       }
     }
   }
@@ -836,17 +849,19 @@ export class CodeVerifier {
   private getPackageDependencies(): Set<string> {
     const deps = new Set<string>();
 
-    if (!this.packageJson) return deps;
+    // Collect from root package.json
+    const pkgs = this.packageJson ? [this.packageJson, ...this.subPackageJsons] : this.subPackageJsons;
 
-    const allDeps = {
-      ...(this.packageJson.dependencies as Record<string, string> || {}),
-      ...(this.packageJson.devDependencies as Record<string, string> || {}),
-      ...(this.packageJson.peerDependencies as Record<string, string> || {}),
-      ...(this.packageJson.optionalDependencies as Record<string, string> || {}),
-    };
-
-    for (const pkg of Object.keys(allDeps)) {
-      deps.add(pkg);
+    for (const pkg of pkgs) {
+      const allDeps = {
+        ...((pkg as Record<string, unknown>).dependencies as Record<string, string> || {}),
+        ...((pkg as Record<string, unknown>).devDependencies as Record<string, string> || {}),
+        ...((pkg as Record<string, unknown>).peerDependencies as Record<string, string> || {}),
+        ...((pkg as Record<string, unknown>).optionalDependencies as Record<string, string> || {}),
+      };
+      for (const name of Object.keys(allDeps)) {
+        deps.add(name);
+      }
     }
 
     return deps;

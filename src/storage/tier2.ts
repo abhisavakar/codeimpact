@@ -14,7 +14,25 @@ const EXCLUDED_PATH_PATTERNS = [
   'vendor/',
   '.venv/',
   'venv/',
+  'env/',
+  'knowledge/',
 ];
+
+/**
+ * Shared SQL WHERE clause fragment for excluding non-project paths.
+ * Use with column name prefix, e.g. PATH_EXCLUSION_SQL('path') or PATH_EXCLUSION_SQL('f.path').
+ */
+function PATH_EXCLUSION_SQL(col: string = 'path'): string {
+  return `${col} NOT LIKE '%node_modules%'
+        AND ${col} NOT LIKE '%.git%'
+        AND ${col} NOT LIKE '%/dist/%'
+        AND ${col} NOT LIKE '%/build/%'
+        AND ${col} NOT LIKE '%/venv/%'
+        AND ${col} NOT LIKE '%/.venv/%'
+        AND ${col} NOT LIKE '%/env/%'
+        AND ${col} NOT LIKE '%__pycache__%'
+        AND ${col} NOT LIKE '%/knowledge/%'`;
+}
 
 export class Tier2Storage {
   private db: Database.Database;
@@ -88,10 +106,7 @@ export class Tier2Storage {
              size_bytes as sizeBytes, line_count as lineCount,
              last_modified as lastModified, indexed_at as indexedAt
       FROM files
-      WHERE path NOT LIKE '%node_modules%'
-        AND path NOT LIKE '%.git%'
-        AND path NOT LIKE '%/dist/%'
-        AND path NOT LIKE '%/build/%'
+      WHERE ${PATH_EXCLUSION_SQL('path')}
       ORDER BY path
     `);
     return stmt.all() as FileMetadata[];
@@ -100,10 +115,7 @@ export class Tier2Storage {
   getFileCount(): number {
     const stmt = this.db.prepare(`
       SELECT COUNT(*) as count FROM files
-      WHERE path NOT LIKE '%node_modules%'
-        AND path NOT LIKE '%.git%'
-        AND path NOT LIKE '%/dist/%'
-        AND path NOT LIKE '%/build/%'
+      WHERE ${PATH_EXCLUSION_SQL('path')}
     `);
     const result = stmt.get() as { count: number };
     return result.count;
@@ -112,10 +124,7 @@ export class Tier2Storage {
   getTotalLines(): number {
     const stmt = this.db.prepare(`
       SELECT COALESCE(SUM(line_count), 0) as total FROM files
-      WHERE path NOT LIKE '%node_modules%'
-        AND path NOT LIKE '%.git%'
-        AND path NOT LIKE '%/dist/%'
-        AND path NOT LIKE '%/build/%'
+      WHERE ${PATH_EXCLUSION_SQL('path')}
     `);
     const result = stmt.get() as { total: number };
     return result.total;
@@ -125,10 +134,7 @@ export class Tier2Storage {
     const stmt = this.db.prepare(`
       SELECT DISTINCT language FROM files
       WHERE language IS NOT NULL
-        AND path NOT LIKE '%node_modules%'
-        AND path NOT LIKE '%.git%'
-        AND path NOT LIKE '%/dist/%'
-        AND path NOT LIKE '%/build/%'
+        AND ${PATH_EXCLUSION_SQL('path')}
       ORDER BY language
     `);
     const results = stmt.all() as { language: string }[];
@@ -602,10 +608,7 @@ export class Tier2Storage {
       FROM symbols s
       JOIN files f ON s.file_id = f.id
       WHERE s.name LIKE ?
-        AND f.path NOT LIKE '%node_modules%'
-        AND f.path NOT LIKE '%.git%'
-        AND f.path NOT LIKE '%/dist/%'
-        AND f.path NOT LIKE '%/build/%'
+        AND ${PATH_EXCLUSION_SQL('f.path')}
     `;
 
     const params: (string | number)[] = [`%${name}%`];
@@ -653,10 +656,7 @@ export class Tier2Storage {
       FROM symbols s
       JOIN files f ON s.file_id = f.id
       WHERE s.name = ?
-        AND f.path NOT LIKE '%node_modules%'
-        AND f.path NOT LIKE '%.git%'
-        AND f.path NOT LIKE '%/dist/%'
-        AND f.path NOT LIKE '%/build/%'
+        AND ${PATH_EXCLUSION_SQL('f.path')}
     `;
 
     const params: string[] = [name];
@@ -702,10 +702,7 @@ export class Tier2Storage {
     const stmt = this.db.prepare(`
       SELECT COUNT(*) as count FROM symbols s
       JOIN files f ON s.file_id = f.id
-      WHERE f.path NOT LIKE '%node_modules%'
-        AND f.path NOT LIKE '%.git%'
-        AND f.path NOT LIKE '%/dist/%'
-        AND f.path NOT LIKE '%/build/%'
+      WHERE ${PATH_EXCLUSION_SQL('f.path')}
     `);
     const result = stmt.get() as { count: number };
     return result.count;
@@ -847,10 +844,7 @@ export class Tier2Storage {
              e.local_name as localName, e.is_default as isDefault, e.line_number as lineNumber
       FROM exports e
       JOIN files f ON e.file_id = f.id
-      WHERE f.path NOT LIKE '%node_modules%'
-        AND f.path NOT LIKE '%.git%'
-        AND f.path NOT LIKE '%/dist/%'
-        AND f.path NOT LIKE '%/build/%'
+      WHERE ${PATH_EXCLUSION_SQL('f.path')}
       ORDER BY f.path, e.line_number
     `);
     const rows = stmt.all() as Array<{
@@ -883,10 +877,7 @@ export class Tier2Storage {
              i.is_namespace as isNamespace, i.line_number as lineNumber
       FROM imports i
       JOIN files f ON i.file_id = f.id
-      WHERE f.path NOT LIKE '%node_modules%'
-        AND f.path NOT LIKE '%.git%'
-        AND f.path NOT LIKE '%/dist/%'
-        AND f.path NOT LIKE '%/build/%'
+      WHERE ${PATH_EXCLUSION_SQL('f.path')}
       ORDER BY f.path, i.line_number
     `);
     const rows = stmt.all() as Array<{
@@ -1159,16 +1150,83 @@ export class Tier2Storage {
     return result?.path || null;
   }
 
+  // Cached path aliases from tsconfig/jsconfig
+  private pathAliases: Map<string, string> | null = null;
+
+  /**
+   * Load path aliases from tsconfig.json/jsconfig.json.
+   * Caches result for subsequent calls.
+   */
+  private getPathAliases(projectPath?: string): Map<string, string> {
+    if (this.pathAliases) return this.pathAliases;
+    this.pathAliases = new Map<string, string>();
+
+    // Common aliases as fallback
+    const commonAliases: Record<string, string> = {
+      '@': 'src',
+      '~': 'src',
+      '#': 'src',
+    };
+    for (const [alias, target] of Object.entries(commonAliases)) {
+      this.pathAliases.set(alias, target);
+    }
+
+    // Try to read tsconfig/jsconfig
+    if (projectPath) {
+      const { existsSync, readFileSync } = require('fs');
+      const { join } = require('path');
+      for (const configFile of ['tsconfig.json', 'jsconfig.json']) {
+        const configPath = join(projectPath, configFile);
+        if (existsSync(configPath)) {
+          try {
+            // Strip comments (JSON with comments)
+            const raw = readFileSync(configPath, 'utf-8')
+              .replace(/\/\/.*$/gm, '')
+              .replace(/\/\*[\s\S]*?\*\//g, '');
+            const config = JSON.parse(raw);
+            const baseUrl = config.compilerOptions?.baseUrl || '.';
+            if (config.compilerOptions?.paths) {
+              for (const [alias, targets] of Object.entries(config.compilerOptions.paths)) {
+                const aliasKey = alias.replace('/*', '').replace('*', '');
+                const target = (targets as string[])[0];
+                if (target) {
+                  const targetPath = target.replace('/*', '').replace('*', '').replace('./', '');
+                  const resolved = baseUrl === '.' ? targetPath : `${baseUrl}/${targetPath}`;
+                  this.pathAliases.set(aliasKey, resolved);
+                }
+              }
+            }
+            break;
+          } catch { /* ignore parse errors */ }
+        }
+      }
+    }
+
+    return this.pathAliases;
+  }
+
   /**
    * Resolve an import path to a file record in the database.
    * Used by indexer to build the dependencies table.
    */
   resolveImportToFile(
     sourceFilePath: string,
-    importPath: string
+    importPath: string,
+    projectPath?: string,
   ): { id: number; path: string } | null {
-    // Skip external packages
-    if (!importPath.startsWith('.') && !importPath.startsWith('/')) return null;
+    // Try to resolve path aliases (e.g. @/components/Button → src/components/Button)
+    if (!importPath.startsWith('.') && !importPath.startsWith('/')) {
+      const aliases = this.getPathAliases(projectPath);
+      let resolved = false;
+      for (const [alias, target] of aliases) {
+        if (importPath === alias || importPath.startsWith(alias + '/')) {
+          importPath = importPath.replace(alias, target);
+          resolved = true;
+          break;
+        }
+      }
+      if (!resolved) return null; // External package
+    }
 
     const sourceDir = sourceFilePath.split(/[/\\]/).slice(0, -1).join('/');
 

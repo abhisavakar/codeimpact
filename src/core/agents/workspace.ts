@@ -36,6 +36,12 @@ export const DEFAULT_CONFIG: AgentConfig = {
     'coverage/**',
     '.next/**',
     'build/**',
+    'venv/**',
+    '.venv/**',
+    'env/**',
+    '__pycache__/**',
+    'vendor/**',
+    'knowledge/**',
   ],
   markers: {
     start: '<!-- code-impact:auto-start -->',
