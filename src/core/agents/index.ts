@@ -142,3 +142,36 @@ export type { LifecycleConfig, LifecycleProposal, LifecycleResult, ProposalType 
 // Telemetry
 export { createTelemetryTable, emitTelemetry, queryTelemetry, getDashboard } from './telemetry.js';
 export type { TelemetryEvent, TelemetryCategory, DashboardStats } from './telemetry.js';
+
+// Hardcoded Knowledge (Tier 2 boost layer)
+export {
+  TECH_KNOWLEDGE,
+  FEATURE_NAME_RULES,
+  FEATURE_NAME_PITFALLS,
+  WELL_KNOWN_FEATURES,
+  DIR_PURPOSE_MAP,
+  SCOPE_LABELS,
+  DOC_SOURCE_REGISTRY,
+} from './hardcoded-knowledge.js';
+export type { TechKnowledge } from './hardcoded-knowledge.js';
+
+// Universal Inference Engine (4-tier fallback system)
+export {
+  inferTechRulesAndPitfalls,
+  classifyFeature,
+  inferDirectoryPurpose,
+  inferDataFlowFromGraph,
+  inferScopeLabel,
+  inferDocSource,
+  extractRulesFromResearch,
+  classifyTechnology,
+  deriveFeatureRules,
+  deriveFeaturePitfalls,
+} from './universal-inference.js';
+export type {
+  TechRulesAndPitfalls,
+  FeatureCategory,
+  DirContext,
+  ExtractedResearchRules,
+  TechCategory,
+} from './universal-inference.js';

@@ -10,6 +10,8 @@ import { getAgentWorkspacePaths, updateMarkedSection, readAgentConfig } from './
 import { writeMarkedFile as writeMarkedFileImpl, SECTION_PRIORITIES, type MarkedSection, type WriteOptions, type WriteResult } from './marker-writer.js';
 import { DEFAULT_BUDGETS, getSectionPriority } from './token-budget.js';
 import type { ProjectIntelligence } from '../knowledge/intelligence-collector.js';
+import { SCOPE_LABELS } from './hardcoded-knowledge.js';
+import { inferDirectoryPurpose, inferScopeLabel, deriveFeatureRules, deriveFeaturePitfalls } from './universal-inference.js';
 
 // ============================================================================
 // Public API
@@ -139,7 +141,7 @@ function renderProjectSkill(
   } else {
     for (const dir of intel.codebase.keyDirectories) {
       const dirName = dir.split('/').pop() || dir;
-      const purpose = inferDirPurpose(dirName);
+      const purpose = inferDirectoryPurpose(dirName);
       lines.push(`| ${dir}/ | ${purpose} |`);
     }
   }
@@ -281,8 +283,12 @@ function renderFeatureSkill(
   technologies: DetectedTechnology[],
   config: AgentConfig,
 ): { frontmatter: string; autoContent: string } {
-  const techNames = technologies.map(t => t.name);
-  const researchRefs = technologies.map(t => `research/${t.name}@${t.version}.md`);
+  // Group scoped packages and cap at 15 for feature-level display
+  const grouped = groupScopedPackages(technologies);
+  const techNames = grouped.map(t => t.name);
+  // Research refs use original (ungrouped) techs, capped at 15
+  const researchTechs = technologies.slice(0, 15);
+  const researchRefs = researchTechs.map(t => `research/${t.name}@${t.version}.md`);
 
   const frontmatter = [
     '---',
@@ -322,16 +328,18 @@ function renderFeatureSkill(
   if (feature.owner) {
     lines.push(`- Owner: ${feature.owner}`);
   }
-  if (technologies.length > 0) {
-    lines.push(`- Technologies: ${techNames.join(', ')}`);
+  if (grouped.length > 0) {
+    const displayTechs = techNames.slice(0, 10);
+    const suffix = techNames.length > 10 ? `, +${techNames.length - 10} more` : '';
+    lines.push(`- Technologies: ${displayTechs.join(', ')}${suffix}`);
   }
   lines.push('');
 
-  // Research References
+  // Research References (capped to avoid bloat)
   if (researchRefs.length > 0) {
     lines.push('## Research References');
     for (const ref of researchRefs) {
-      const tech = technologies.find(t => ref.includes(t.name));
+      const tech = researchTechs.find(t => ref.includes(t.name));
       if (tech) {
         lines.push(`- [${tech.name} v${tech.version}](../${ref})`);
       }
@@ -341,7 +349,7 @@ function renderFeatureSkill(
 
   // Rules — derived from technology patterns and feature characteristics
   lines.push('## Rules');
-  const rules = deriveRules(feature, technologies);
+  const rules = deriveFeatureRules(feature, technologies);
   for (const rule of rules) {
     lines.push(`- ${rule}`);
   }
@@ -349,7 +357,7 @@ function renderFeatureSkill(
 
   // Pitfalls — from research + known mistakes
   lines.push('## Pitfalls');
-  const pitfalls = derivePitfalls(feature, technologies);
+  const pitfalls = deriveFeaturePitfalls(feature, technologies);
   for (const pitfall of pitfalls) {
     lines.push(`- ${pitfall}`);
   }
@@ -460,305 +468,9 @@ function summarizeTestFiles(testFiles: string[]): string[] {
   return globs;
 }
 
-function inferDirPurpose(dirName: string): string {
-  const purposes: Record<string, string> = {
-    core: 'Core business logic and domain modules',
-    server: 'Server, transports, and request handling',
-    storage: 'Database access and persistence',
-    indexing: 'Code indexing and symbol extraction',
-    api: 'API routes and handlers',
-    auth: 'Authentication and authorization',
-    billing: 'Payment processing',
-    test: 'Tests and evaluation harness',
-    doc: 'Documentation',
-    knowledge: 'AI knowledge system',
-    cli: 'Command-line interface',
-    base: 'Base configuration and fixtures',
-    src: 'Application source code',
-    lib: 'Shared utilities',
-  };
-  return purposes[dirName.toLowerCase()] || `${dirName} module`;
-}
-
-// ============================================================================
-// Technology-Aware Rule & Pitfall Derivation
-// ============================================================================
-
-interface TechKnowledge {
-  rules: string[];
-  pitfalls: string[];
-}
-
-const TECH_KNOWLEDGE: Record<string, TechKnowledge> = {
-  'express': {
-    rules: [
-      'Use Router() for modular route definitions',
-      'Always register error handler middleware last (4 args: err, req, res, next)',
-    ],
-    pitfalls: [
-      'Forgetting to call next() in middleware causes request to hang',
-      'Async errors in handlers need explicit try/catch or express-async-errors',
-    ],
-  },
-  'hono': {
-    rules: [
-      'Use app.route() for modular route grouping',
-      'Return c.json() or c.text() — do not use res.send()',
-    ],
-    pitfalls: [
-      'Hono middleware must call next() or return a Response — skipping both hangs the request',
-    ],
-  },
-  'better-sqlite3': {
-    rules: [
-      'Use db.prepare().all() for SELECT, db.prepare().run() for INSERT/UPDATE/DELETE',
-      'better-sqlite3 is synchronous — do NOT use async/await with db calls',
-      'All database access should go through a single module',
-    ],
-    pitfalls: [
-      'db.exec() returns nothing — using it for SELECT gives undefined',
-      'WAL mode must be set once after opening: db.pragma("journal_mode = WAL")',
-    ],
-  },
-  'stripe': {
-    rules: [
-      'Always verify webhook signatures before processing events',
-      'Use idempotency keys for payment creation to prevent double-charges',
-    ],
-    pitfalls: [
-      'Stripe webhook events may arrive out of order — handle idempotently',
-      'stripe.webhooks.constructEvent() throws on invalid signature — wrap in try/catch',
-    ],
-  },
-  'jsonwebtoken': {
-    rules: [
-      'Always use jwt.verify() — never trust jwt.decode() alone',
-      'Set explicit expiration (expiresIn) on all tokens',
-    ],
-    pitfalls: [
-      'Using jwt.decode() without verify() is a security vulnerability',
-      'The "none" algorithm attack — always specify algorithms: ["HS256"]',
-    ],
-  },
-  '@modelcontextprotocol/sdk': {
-    rules: [
-      'Use server.tool() to register MCP tools with zod schema validation',
-      'All tool handlers must return { content: [...] } response objects',
-    ],
-    pitfalls: [
-      'Tool names must be unique across the server — duplicates silently overwrite',
-      'Forgetting to call server.connect(transport) means no requests are handled',
-    ],
-  },
-  'prisma': {
-    rules: [
-      'Run npx prisma generate after schema changes',
-      'Use transactions for multi-table operations: prisma.$transaction()',
-    ],
-    pitfalls: [
-      'Forgetting prisma generate after schema change causes type mismatches at runtime',
-      'N+1 queries — use include/select to eagerly load relations',
-    ],
-  },
-  'zod': {
-    rules: [
-      'Define schemas once, derive TypeScript types with z.infer<typeof schema>',
-      'Use .safeParse() in handlers for graceful error handling',
-    ],
-    pitfalls: [
-      '.parse() throws on invalid data — use .safeParse() in request handlers',
-    ],
-  },
-  'vitest': {
-    rules: [
-      'Use describe/it/expect patterns for test organization',
-      'Use vi.mock() for module mocking, vi.fn() for function stubs',
-    ],
-    pitfalls: [
-      'vi.mock() is hoisted to top of file — cannot access variables from outer scope',
-    ],
-  },
-  'web-tree-sitter': {
-    rules: [
-      'Initialize Parser with await Parser.init() before use',
-      'Load language WASM files with Parser.Language.load()',
-    ],
-    pitfalls: [
-      'Parser.init() must complete before any parsing — race condition if not awaited',
-      'WASM files must be bundled/copied to dist — not resolved from node_modules at runtime',
-    ],
-  },
-  '@xenova/transformers': {
-    rules: [
-      'Use pipeline() for high-level tasks, AutoModel for custom inference',
-      'Cache downloaded models by setting env.cacheDir',
-    ],
-    pitfalls: [
-      'First model load downloads weights (~100MB+) — cache for subsequent runs',
-      'ONNX runtime may fail on some architectures — test on target platform',
-    ],
-  },
-  'chokidar': {
-    rules: [
-      'Use chokidar.watch() with ignored patterns to skip node_modules',
-      'Handle both "add" and "change" events for file watching',
-    ],
-    pitfalls: [
-      'Not closing watcher on process exit leaks file handles',
-      'Rapid file changes may fire multiple events — debounce handlers',
-    ],
-  },
-};
-
-/** Well-known feature names that should use name-based rules as primary */
-const WELL_KNOWN_FEATURES = new Set([
-  'server', 'storage', 'indexing', 'core', 'test', 'knowledge', 'doc',
-  'auth', 'api', 'billing', 'cli',
-]);
-
-/** Derive context-aware rules based on feature name and technologies */
-function deriveRules(feature: DetectedFeature, technologies: DetectedTechnology[]): string[] {
-  const rules: string[] = [];
-
-  // Well-known features: use name-based rules first, then supplement with tech rules
-  if (WELL_KNOWN_FEATURES.has(feature.name)) {
-    rules.push(...getFeatureNameRules(feature.name));
-
-    // Add tech rules that aren't redundant (limit to 2 extra)
-    const techRules: string[] = [];
-    for (const tech of technologies) {
-      const knowledge = TECH_KNOWLEDGE[tech.name];
-      if (knowledge) techRules.push(...knowledge.rules);
-    }
-    // Only add non-duplicate tech rules, capped
-    for (const tr of techRules.slice(0, 2)) {
-      if (!rules.some(r => r.includes(tr.split(' ')[0] || ''))) {
-        rules.push(tr);
-      }
-    }
-  } else {
-    // Unknown feature: use tech rules first, fallback to generic
-    for (const tech of technologies) {
-      const knowledge = TECH_KNOWLEDGE[tech.name];
-      if (knowledge) rules.push(...knowledge.rules);
-    }
-    if (rules.length === 0) {
-      rules.push(...getFeatureNameRules(feature.name));
-    }
-  }
-
-  // Always add scope awareness
-  if (feature.paths.length > 0) {
-    const scope = feature.paths[0]?.replace('/**', '') || '';
-    rules.push(`Changes here should not import from other feature directories — keep ${scope} self-contained`);
-  }
-
-  return rules;
-}
-
-/** Derive pitfalls based on technologies and feature characteristics */
-function derivePitfalls(feature: DetectedFeature, technologies: DetectedTechnology[]): string[] {
-  const pitfalls: string[] = [];
-
-  // Well-known features: use name-based pitfalls first, supplement with tech
-  if (WELL_KNOWN_FEATURES.has(feature.name)) {
-    pitfalls.push(...getFeatureNamePitfalls(feature.name));
-    for (const tech of technologies) {
-      const knowledge = TECH_KNOWLEDGE[tech.name];
-      if (knowledge) {
-        for (const p of knowledge.pitfalls.slice(0, 1)) {
-          if (!pitfalls.includes(p)) pitfalls.push(p);
-        }
-      }
-    }
-  } else {
-    for (const tech of technologies) {
-      const knowledge = TECH_KNOWLEDGE[tech.name];
-      if (knowledge) pitfalls.push(...knowledge.pitfalls);
-    }
-    if (pitfalls.length === 0) {
-      pitfalls.push(...getFeatureNamePitfalls(feature.name));
-    }
-  }
-
-  return pitfalls;
-}
-
-/** Rules derived from feature name when technologies aren't matched */
-function getFeatureNameRules(name: string): string[] {
-  const rules: Record<string, string[]> = {
-    server: [
-      'All tool/resource handlers must validate inputs before processing',
-      'Return structured error responses — never throw raw errors to clients',
-    ],
-    storage: [
-      'All database access should go through this module — no direct imports elsewhere',
-      'Use transactions for multi-step operations to ensure consistency',
-    ],
-    indexing: [
-      'Index operations should be idempotent — reindexing same file produces same result',
-      'Handle parse errors gracefully — a broken file should not crash the indexer',
-    ],
-    core: [
-      'Core modules should have no side effects on import',
-      'Export types alongside functions for downstream consumers',
-    ],
-    test: [
-      'Tests should be deterministic — no reliance on external services or timing',
-      'Clean up temporary files and directories in afterEach/afterAll hooks',
-    ],
-    knowledge: [
-      'Skill files must follow the agentskills.io SKILL.md format',
-      'Generated content must use marker comments to preserve manual edits',
-    ],
-    doc: [
-      'Generated docs must be kept in sync with source code changes',
-      'Use relative paths for internal links',
-    ],
-    auth: [
-      'Never store plain-text passwords — use bcrypt or argon2',
-      'Validate and sanitize all user inputs before processing',
-    ],
-    api: [
-      'All endpoints must validate request bodies/params before processing',
-      'Return consistent error response shapes across all endpoints',
-    ],
-  };
-  return rules[name] || [
-    'Follow existing patterns in this module for consistency',
-    'Export public API from index.ts — keep internal helpers unexported',
-  ];
-}
-
-/** Pitfalls derived from feature name */
-function getFeatureNamePitfalls(name: string): string[] {
-  const pitfalls: Record<string, string[]> = {
-    server: [
-      'Unhandled promise rejections in handlers crash the process — always catch async errors',
-      'Adding middleware order matters — auth before route handlers',
-    ],
-    storage: [
-      'Forgetting to close database connections leaks file handles',
-      'Concurrent writes without transactions may cause data corruption',
-    ],
-    indexing: [
-      'Large files can cause out-of-memory — set size limits on parsed content',
-      'File paths must be normalized (forward slashes) for cross-platform compatibility',
-    ],
-    core: [
-      'Circular imports between core modules cause runtime errors — check dependency direction',
-      'Changing public API signatures breaks downstream consumers',
-    ],
-    test: [
-      'Tests sharing mutable state between runs cause flaky failures',
-      'Temp directories not cleaned up fill disk over repeated test runs',
-    ],
-  };
-  return pitfalls[name] || [
-    'Check for null/undefined before property access on external data',
-    'Changing exports may break other modules that depend on this feature',
-  ];
-}
+// inferDirPurpose, TECH_KNOWLEDGE, WELL_KNOWN_FEATURES, deriveRules, derivePitfalls,
+// getFeatureNameRules, getFeatureNamePitfalls — all moved to universal-inference.ts
+// and hardcoded-knowledge.ts
 
 function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1).replace(/-/g, ' ');
@@ -808,15 +520,56 @@ function filterDirectDependencies(technologies: DetectedTechnology[], projectPat
     /^@biomejs\//,
   ];
 
+  let filtered: DetectedTechnology[];
   if (directNames.size > 0) {
-    // Return only technologies matching direct deps, filtered for noise
-    return technologies
+    filtered = technologies
       .filter(t => directNames.has(t.name))
       .filter(t => !skipPatterns.some(p => p.test(t.name)));
+  } else {
+    filtered = technologies
+      .filter(t => !skipPatterns.some(p => p.test(t.name)))
+      .slice(0, 30);
   }
 
-  // Fallback: filter out obvious noise
-  return technologies
-    .filter(t => !skipPatterns.some(p => p.test(t.name)))
-    .slice(0, 20);
+  // Group scoped packages — collapse @scope/x, @scope/y into "@scope (N packages)"
+  return groupScopedPackages(filtered);
 }
+
+/** Group scoped packages that have 3+ siblings under same scope into a single summary entry */
+function groupScopedPackages(techs: DetectedTechnology[]): DetectedTechnology[] {
+  const scopeMap = new Map<string, DetectedTechnology[]>();
+  const ungrouped: DetectedTechnology[] = [];
+
+  for (const t of techs) {
+    const m = t.name.match(/^(@[^/]+)\//);
+    if (m) {
+      const scope = m[1];
+      if (!scopeMap.has(scope)) scopeMap.set(scope, []);
+      scopeMap.get(scope)!.push(t);
+    } else {
+      ungrouped.push(t);
+    }
+  }
+
+  const result: DetectedTechnology[] = [...ungrouped];
+
+  for (const [scope, members] of scopeMap.entries()) {
+    if (members.length >= 3) {
+      // Collapse into a single summary entry
+      const label = inferScopeLabel(scope, members.length);
+      result.push({
+        name: label,
+        version: members[0].version,
+        source: members[0].source,
+        importPaths: members.flatMap(m => m.importPaths || []),
+      });
+    } else {
+      // Keep individual entries if only 1-2 packages
+      result.push(...members);
+    }
+  }
+
+  return result;
+}
+
+// SCOPE_LABELS moved to hardcoded-knowledge.ts

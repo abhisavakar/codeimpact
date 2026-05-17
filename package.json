@@ -1,6 +1,6 @@
 {
   "name": "codeimpact",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "MCP server that gives AI assistants persistent understanding of your codebase",
   "type": "module",
   "main": "dist/index.js",

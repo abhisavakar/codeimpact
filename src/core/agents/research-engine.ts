@@ -8,6 +8,7 @@ import { join } from 'path';
 import type { DetectedTechnology, ResearchFile, DocSource } from './types.js';
 import { getAgentWorkspacePaths } from './workspace.js';
 import { assessTrust, renderTrustFrontmatter } from './research-trust.js';
+import { inferDocSource } from './universal-inference.js';
 
 // ============================================================================
 // Public API
@@ -49,8 +50,8 @@ export async function researchTechnology(
     }
   }
 
-  // Find documentation source
-  const docSource = findDocSource(tech.name);
+  // Find documentation source (universal — works for any ecosystem)
+  const docSource = inferDocSource(tech.name, tech.source);
   if (!docSource) {
     // Generate a minimal stub
     const stub = generateStubResearch(tech);
@@ -64,11 +65,11 @@ export async function researchTechnology(
     const fetchFn = options.fetchFn || defaultFetch;
     const content = await fetchAndDistill(tech, docSource, fetchFn, options.maxTokensPerTech);
 
+    const isNew = !existsSync(filePath);
     mkdirSync(paths.researchDir, { recursive: true });
     writeFileSync(filePath, content);
 
     const tokenCount = estimateTokens(content);
-    const isNew = !existsSync(filePath);
     return {
       technology: tech.name,
       version: tech.version,
@@ -109,121 +110,7 @@ export async function researchAllTechnologies(
   return results;
 }
 
-// ============================================================================
-// Doc Source Registry
-// ============================================================================
-
-const DOC_SOURCE_REGISTRY: DocSource[] = [
-  {
-    packageNames: ['express'],
-    docsUrl: 'https://expressjs.com/en/api.html',
-    apiRefUrl: 'https://expressjs.com/en/4x/api.html',
-    changelogUrl: 'https://github.com/expressjs/express/blob/master/History.md',
-  },
-  {
-    packageNames: ['react', 'react-dom'],
-    docsUrl: 'https://react.dev/reference/react',
-    apiRefUrl: 'https://react.dev/reference/react',
-    changelogUrl: 'https://github.com/facebook/react/blob/main/CHANGELOG.md',
-  },
-  {
-    packageNames: ['next'],
-    docsUrl: 'https://nextjs.org/docs',
-    apiRefUrl: 'https://nextjs.org/docs/api-reference',
-    changelogUrl: 'https://github.com/vercel/next.js/releases',
-  },
-  {
-    packageNames: ['typescript'],
-    docsUrl: 'https://www.typescriptlang.org/docs/',
-    changelogUrl: 'https://www.typescriptlang.org/docs/handbook/release-notes/overview.html',
-  },
-  {
-    packageNames: ['vitest'],
-    docsUrl: 'https://vitest.dev/api/',
-    apiRefUrl: 'https://vitest.dev/api/',
-    changelogUrl: 'https://github.com/vitest-dev/vitest/releases',
-  },
-  {
-    packageNames: ['jest'],
-    docsUrl: 'https://jestjs.io/docs/api',
-    apiRefUrl: 'https://jestjs.io/docs/expect',
-  },
-  {
-    packageNames: ['prisma', '@prisma/client'],
-    docsUrl: 'https://www.prisma.io/docs',
-    apiRefUrl: 'https://www.prisma.io/docs/reference/api-reference',
-    changelogUrl: 'https://github.com/prisma/prisma/releases',
-  },
-  {
-    packageNames: ['stripe'],
-    docsUrl: 'https://docs.stripe.com/api',
-    changelogUrl: 'https://docs.stripe.com/changelog',
-  },
-  {
-    packageNames: ['@modelcontextprotocol/sdk'],
-    docsUrl: 'https://modelcontextprotocol.io/docs',
-    apiRefUrl: 'https://github.com/modelcontextprotocol/typescript-sdk',
-  },
-  {
-    packageNames: ['better-sqlite3'],
-    docsUrl: 'https://github.com/WiseLibs/better-sqlite3/blob/master/docs/api.md',
-    apiRefUrl: 'https://github.com/WiseLibs/better-sqlite3/blob/master/docs/api.md',
-  },
-  {
-    packageNames: ['zod'],
-    docsUrl: 'https://zod.dev/',
-    apiRefUrl: 'https://zod.dev/',
-  },
-  {
-    packageNames: ['tailwindcss'],
-    docsUrl: 'https://tailwindcss.com/docs',
-  },
-  {
-    packageNames: ['vite'],
-    docsUrl: 'https://vitejs.dev/guide/',
-    apiRefUrl: 'https://vitejs.dev/config/',
-  },
-  {
-    packageNames: ['passport'],
-    docsUrl: 'https://www.passportjs.org/docs/',
-  },
-  {
-    packageNames: ['jsonwebtoken'],
-    docsUrl: 'https://github.com/auth0/node-jsonwebtoken#readme',
-  },
-  {
-    packageNames: ['axios'],
-    docsUrl: 'https://axios-http.com/docs/intro',
-    apiRefUrl: 'https://axios-http.com/docs/api_intro',
-  },
-  {
-    packageNames: ['fastify'],
-    docsUrl: 'https://fastify.dev/docs/latest/',
-    apiRefUrl: 'https://fastify.dev/docs/latest/Reference/',
-  },
-  {
-    packageNames: ['drizzle-orm'],
-    docsUrl: 'https://orm.drizzle.team/docs/overview',
-  },
-  {
-    packageNames: ['trpc', '@trpc/server', '@trpc/client'],
-    docsUrl: 'https://trpc.io/docs',
-  },
-  {
-    packageNames: ['hono'],
-    docsUrl: 'https://hono.dev/docs/',
-    apiRefUrl: 'https://hono.dev/docs/api/hono',
-  },
-];
-
-function findDocSource(packageName: string): DocSource | null {
-  for (const source of DOC_SOURCE_REGISTRY) {
-    if (source.packageNames.includes(packageName)) {
-      return source;
-    }
-  }
-  return null;
-}
+// DOC_SOURCE_REGISTRY and findDocSource — replaced by inferDocSource from universal-inference.ts
 
 // ============================================================================
 // Fetch & Distill

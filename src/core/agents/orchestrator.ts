@@ -20,6 +20,7 @@ import { detectFeatures, type FeatureDetectorInput } from './feature-detector.js
 import { researchAllTechnologies, type ResearchOptions, type ResearchResult } from './research-engine.js';
 import { generateProjectFiles, generateFeatureFiles, type GeneratorInput } from './generator.js';
 import { generateAgentFiles, generateAgentsShim } from './agent-generator.js';
+import { inferDirectoryPurpose, inferDataFlowFromGraph } from './universal-inference.js';
 import { commitAndPush, hasChanges, isGitRepo, type GitResult } from './git-operations.js';
 import { runImprovementEngine, type ImprovementResult } from './improvement-engine.js';
 import { createOutcomeTable, getOutcomeStats } from './outcome-storage.js';
@@ -180,7 +181,7 @@ export async function agentsGenerate(options: OrchestratorOptions): Promise<Gene
   }
 
   // 4. Generate project files
-  const intel = intelligence || createMinimalIntelligence(projectPath, technologies, features);
+  const intel = intelligence || createMinimalIntelligence(projectPath, technologies, features, importGraph);
   const genInput: GeneratorInput = {
     projectPath,
     intelligence: intel,
@@ -418,6 +419,7 @@ function createMinimalIntelligence(
   projectPath: string,
   technologies: DetectedTechnology[],
   features: DetectedFeature[],
+  importGraph?: Map<string, string[]>,
 ): ProjectIntelligence {
   // Count actual source files and lines
   const sourceFiles = getIndexedFilesFromFS(projectPath);
@@ -449,7 +451,7 @@ function createMinimalIntelligence(
   const layers = features.map(f => ({
     name: f.name.charAt(0).toUpperCase() + f.name.slice(1),
     directory: f.paths[0]?.replace('/**', '') || f.name,
-    purpose: inferLayerPurpose(f.name),
+    purpose: inferDirectoryPurpose(f.name),
     fileCount: f.fileCount,
   }));
 
@@ -469,7 +471,7 @@ function createMinimalIntelligence(
     },
     architecture: {
       layers,
-      dataFlow: inferDataFlow(features),
+      dataFlow: inferDataFlowFromGraph(features, importGraph),
       keyComponents: [],
       patternCategories: {},
       topPatterns: [],
@@ -547,38 +549,8 @@ function extToLanguage(ext: string): string | null {
   return map[ext] || null;
 }
 
-function inferLayerPurpose(featureName: string): string {
-  const purposes: Record<string, string> = {
-    core: 'Core business logic and domain modules',
-    server: 'MCP server, transports, and request handling',
-    storage: 'Database access and persistence layer',
-    indexing: 'Code indexing, parsing, and symbol extraction',
-    api: 'API routes, handlers, and middleware',
-    auth: 'Authentication and authorization',
-    billing: 'Payment processing and subscription management',
-    test: 'Test fixtures, harness, and evaluation scenarios',
-    doc: 'Documentation generation and management',
-    knowledge: 'AI knowledge system and skill management',
-    cli: 'Command-line interface',
-    base: 'Base configuration and shared utilities',
-  };
-  return purposes[featureName] || `${featureName} module`;
-}
-
-function inferDataFlow(features: DetectedFeature[]): string[] {
-  const names = features.map(f => f.name);
-  const flow: string[] = [];
-
-  // Common data flow patterns
-  if (names.includes('server') || names.includes('api')) flow.push('Request');
-  if (names.includes('server')) flow.push('Server');
-  if (names.includes('api')) flow.push('API');
-  if (names.includes('core')) flow.push('Core');
-  if (names.includes('storage')) flow.push('Storage');
-  if (names.includes('indexing')) flow.push('Indexer');
-
-  return flow.length >= 2 ? flow : [];
-}
+// inferLayerPurpose and inferDataFlow — replaced by universal-inference.ts
+// (inferDirectoryPurpose and inferDataFlowFromGraph)
 
 function detectTestFramework(projectPath: string): string {
   const pkgPath = join(projectPath, 'package.json');
