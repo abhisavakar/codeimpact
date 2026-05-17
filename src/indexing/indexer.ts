@@ -9,6 +9,40 @@ import { Tier2Storage } from '../storage/tier2.js';
 import { isCodeFile, detectLanguage, hashContent, getPreview, countLines } from '../utils/files.js';
 import type { CodeImpactConfig, IndexingProgress } from '../types/index.js';
 
+/**
+ * Hard exclusion segments — if ANY of these appear as a path segment,
+ * the file is unconditionally rejected.  This is the last-resort safety net
+ * that works regardless of glob/chokidar ignore behaviour.
+ */
+const EXCLUDED_PATH_SEGMENTS = [
+  'node_modules',
+  '.git',
+  'venv',
+  '.venv',
+  'env',
+  '__pycache__',
+  '.pytest_cache',
+  '.mypy_cache',
+  '.ruff_cache',
+  '.tox',
+  '.nox',
+  'vendor',
+  '.gradle',
+  'Pods',
+  'DerivedData',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  'knowledge',
+];
+
+/** Returns true if the given relative path should be excluded from indexing. */
+function isExcludedPath(relPath: string): boolean {
+  // Normalise to forward-slashes, split on separator
+  const segments = relPath.replace(/\\/g, '/').split('/');
+  return segments.some(seg => EXCLUDED_PATH_SEGMENTS.includes(seg));
+}
+
 export class Indexer extends EventEmitter {
   private config: CodeImpactConfig;
   private embeddingGenerator: EmbeddingGenerator;
@@ -92,9 +126,17 @@ export class Indexer extends EventEmitter {
 
   async indexFile(absolutePath: string): Promise<boolean> {
     try {
+      // Normalise to forward slashes so DB paths are consistent across platforms.
+      // On Windows, path.relative() returns backslashes which breaks SQL lookups.
+      const relativePath = relative(this.config.projectPath, absolutePath).replace(/\\/g, '/');
+
+      // Hard safety-net: reject excluded paths regardless of how they arrived
+      if (isExcludedPath(relativePath)) {
+        return false;
+      }
+
       const content = readFileSync(absolutePath, 'utf-8');
       const stats = statSync(absolutePath);
-      const relativePath = relative(this.config.projectPath, absolutePath);
 
       const contentHash = hashContent(content);
       const existingFile = this.tier2.getFile(relativePath);
@@ -198,6 +240,13 @@ export class Indexer extends EventEmitter {
     this.emit('indexingStarted');
 
     try {
+      // Purge any previously-indexed files that match exclusion patterns
+      // (node_modules, venv, etc.). This cleans stale data from older versions.
+      const purged = this.tier2.purgeExcludedFiles();
+      if (purged > 0) {
+        console.error(`[Index] Purged ${purged} excluded files from database`);
+      }
+
       // Find all code files
       const patterns = [
         '**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.mjs', '**/*.cjs',
@@ -242,6 +291,13 @@ export class Indexer extends EventEmitter {
         }
       }
 
+      // Second pass: resolve dependencies now that ALL files are in the DB.
+      // During the first pass, imports to not-yet-indexed files couldn't resolve.
+      const depCount = this.rebuildDependencies();
+      if (depCount > 0) {
+        console.error(`[Index] Built ${depCount} dependency edges`);
+      }
+
       this.emit('indexingComplete', {
         total: checked,
         indexed,
@@ -250,6 +306,28 @@ export class Indexer extends EventEmitter {
     } finally {
       this.isIndexing = false;
     }
+  }
+
+  /**
+   * Rebuild all dependency edges from stored imports.
+   * Run after initial indexing so all target files are in the DB.
+   */
+  private rebuildDependencies(): number {
+    // Clear all existing deps and rebuild from imports table
+    this.tier2.clearAllDependencies();
+
+    const allImports = this.tier2.getAllImports();
+    let count = 0;
+
+    for (const imp of allImports) {
+      const targetFile = this.tier2.resolveImportToFile(imp.filePath, imp.importedFrom, this.config.projectPath);
+      if (targetFile) {
+        this.tier2.addDependency(imp.fileId, targetFile.id, 'imports');
+        count++;
+      }
+    }
+
+    return count;
   }
 
   startWatching(): void {

@@ -268,7 +268,11 @@ export class CodeImpactEngine {
       this.summarizer.invalidateSummaryByPath(path);
       this.knowledgeOrchestrator.schedule('file_indexed', [path]);
 
-      this.pendingComponentDocPaths.add(path);
+      // Skip knowledge/generated paths to prevent recursive doc nesting
+      const normalizedPath = path.replace(/\\/g, '/');
+      if (!normalizedPath.includes('knowledge/') && !normalizedPath.includes('.code-impact/')) {
+        this.pendingComponentDocPaths.add(path);
+      }
       if (this.componentDocTimer) clearTimeout(this.componentDocTimer);
       this.componentDocTimer = setTimeout(() => {
         this.batchGenerateComponentDocs(Array.from(this.pendingComponentDocPaths)).catch((err) => {
@@ -515,6 +519,11 @@ export class CodeImpactEngine {
         FROM files f
         LEFT JOIN dependencies d ON d.target_file_id = f.id
         WHERE f.language IS NOT NULL
+          AND f.path NOT LIKE '%node_modules%'
+          AND f.path NOT LIKE '%knowledge/%'
+          AND f.path NOT LIKE '%.code-impact/%'
+          AND f.path NOT LIKE '%/venv/%'
+          AND f.path NOT LIKE '%/.venv/%'
         GROUP BY f.id
         ORDER BY dep_count DESC
         LIMIT 20

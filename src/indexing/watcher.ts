@@ -8,6 +8,44 @@ export interface FileEvent {
   relativePath: string;
 }
 
+/**
+ * Convert glob-style ignore patterns (e.g. `** /node_modules/**`) into a
+ * function matcher that chokidar v4 understands.
+ * Chokidar v4 treats plain strings as *literal* filename matches, not globs.
+ * We convert `** /{name}/**` patterns into a fast path-segment check.
+ */
+function buildIgnoreMatcher(patterns: string[]): (path: string) => boolean {
+  // Extract unique directory segment names from `** /{name}/**` or `** /{name}/*` patterns
+  const segments = new Set<string>();
+
+  for (const p of patterns) {
+    // Match patterns like **/node_modules/** or **/venv/**
+    const m = p.match(/^\*\*\/([^/*]+)\/\*\*?$/);
+    if (m && m[1]) {
+      segments.add(m[1]);
+    }
+    // Match patterns like **/.env.* or **/*.min.js (skip — not directory patterns)
+  }
+
+  // Also add hard-coded critical exclusions as safety net
+  for (const s of ['node_modules', '.git', 'venv', '.venv', 'env', '__pycache__', 'vendor', 'knowledge', '.next', '.nuxt']) {
+    segments.add(s);
+  }
+
+  const segmentArray = [...segments];
+
+  return (testPath: string): boolean => {
+    // Normalise to forward slashes for consistent matching
+    const normalised = testPath.replace(/\\/g, '/');
+    for (const seg of segmentArray) {
+      if (normalised.includes('/' + seg + '/') || normalised.endsWith('/' + seg) || normalised === seg) {
+        return true;
+      }
+    }
+    return false;
+  };
+}
+
 export class FileWatcher extends EventEmitter {
   private watcher: FSWatcher | null = null;
   private projectPath: string;
@@ -24,13 +62,16 @@ export class FileWatcher extends EventEmitter {
       return;
     }
 
+    // Build a function-based ignore matcher compatible with chokidar v4
+    const ignoreFn = buildIgnoreMatcher(this.ignorePatterns);
+
     this.watcher = chokidar.watch(this.projectPath, {
       ignored: [
         /(^|[\/\\])\../, // dotfiles
-        ...this.ignorePatterns
+        ignoreFn,
       ],
       persistent: true,
-      ignoreInitial: false, // We want initial add events for indexing
+      ignoreInitial: true, // Don't emit 'add' for existing files — initial index uses glob
       awaitWriteFinish: {
         stabilityThreshold: 300,
         pollInterval: 100
@@ -54,7 +95,8 @@ export class FileWatcher extends EventEmitter {
   }
 
   private handleEvent(type: 'add' | 'change' | 'unlink', path: string): void {
-    const relativePath = relative(this.projectPath, path);
+    // Normalise to forward slashes for consistent DB lookups on Windows
+    const relativePath = relative(this.projectPath, path).replace(/\\/g, '/');
 
     const event: FileEvent = {
       type,

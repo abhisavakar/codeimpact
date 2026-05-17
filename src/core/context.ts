@@ -193,7 +193,8 @@ ${result.preview}
         }
 
         // Boost: Recently modified (within 24 hours)
-        const hoursSinceModified = (Date.now() - r.lastModified) / 3600000;
+        // lastModified is stored as seconds since epoch
+        const hoursSinceModified = (Date.now() - r.lastModified * 1000) / 3600000;
         if (hoursSinceModified < 24) {
           score *= 1 + (0.3 * (24 - hoursSinceModified) / 24);
         }

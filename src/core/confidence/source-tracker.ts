@@ -80,7 +80,7 @@ export class SourceTracker {
             file: result.path,
             similarity,
             snippet: result.preview,
-            lastModified: file ? new Date(file.lastModified) : undefined,
+            lastModified: file ? new Date(file.lastModified * 1000) : undefined,
             usageCount: dependents.length + 1,
             function: symbols.length > 0 ? symbols[0].name : undefined
           });

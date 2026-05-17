@@ -23,15 +23,16 @@ const EXCLUDED_PATH_PATTERNS = [
  * Use with column name prefix, e.g. PATH_EXCLUSION_SQL('path') or PATH_EXCLUSION_SQL('f.path').
  */
 function PATH_EXCLUSION_SQL(col: string = 'path'): string {
-  return `${col} NOT LIKE '%node_modules%'
-        AND ${col} NOT LIKE '%.git%'
+  return `${col} NOT LIKE '%node_modules/%'
+        AND ${col} NOT LIKE '%.git/%'
         AND ${col} NOT LIKE '%/dist/%'
         AND ${col} NOT LIKE '%/build/%'
         AND ${col} NOT LIKE '%/venv/%'
         AND ${col} NOT LIKE '%/.venv/%'
         AND ${col} NOT LIKE '%/env/%'
         AND ${col} NOT LIKE '%__pycache__%'
-        AND ${col} NOT LIKE '%/knowledge/%'`;
+        AND ${col} NOT LIKE '%/knowledge/%'
+        AND ${col} NOT LIKE 'knowledge/%'`;
 }
 
 export class Tier2Storage {
@@ -98,6 +99,41 @@ export class Tier2Storage {
   deleteFile(path: string): void {
     const stmt = this.db.prepare('DELETE FROM files WHERE path = ?');
     stmt.run(path);
+  }
+
+  /**
+   * Bulk-delete files whose paths match excluded patterns (node_modules, venv, etc.).
+   * Call this during initialization to clean up stale data from previous indexing runs.
+   * Returns the number of rows deleted.
+   */
+  purgeExcludedFiles(): number {
+    // Delete from all related tables using a subquery
+    const excludedIds = this.db.prepare(`
+      SELECT id FROM files
+      WHERE NOT (${PATH_EXCLUSION_SQL('path')})
+    `).all() as Array<{ id: number }>;
+
+    if (excludedIds.length === 0) return 0;
+
+    const ids = excludedIds.map(r => r.id);
+
+    // Batch delete in chunks to avoid SQLite variable limits
+    const chunkSize = 500;
+    let deleted = 0;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const placeholders = chunk.map(() => '?').join(',');
+
+      this.db.prepare(`DELETE FROM embeddings WHERE file_id IN (${placeholders})`).run(...chunk);
+      this.db.prepare(`DELETE FROM symbols WHERE file_id IN (${placeholders})`).run(...chunk);
+      this.db.prepare(`DELETE FROM imports WHERE file_id IN (${placeholders})`).run(...chunk);
+      this.db.prepare(`DELETE FROM exports WHERE file_id IN (${placeholders})`).run(...chunk);
+      this.db.prepare(`DELETE FROM dependencies WHERE source_file_id IN (${placeholders}) OR target_file_id IN (${placeholders})`).run(...chunk, ...chunk);
+      const result = this.db.prepare(`DELETE FROM files WHERE id IN (${placeholders})`).run(...chunk);
+      deleted += result.changes;
+    }
+
+    return deleted;
   }
 
   getAllFiles(): FileMetadata[] {
@@ -481,6 +517,11 @@ export class Tier2Storage {
   clearDependencies(fileId: number): void {
     const stmt = this.db.prepare('DELETE FROM dependencies WHERE source_file_id = ?');
     stmt.run(fileId);
+  }
+
+  /** Remove ALL dependency edges. Used before a full rebuild pass. */
+  clearAllDependencies(): void {
+    this.db.prepare('DELETE FROM dependencies').run();
   }
 
   // Project summary

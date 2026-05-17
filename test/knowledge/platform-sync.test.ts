@@ -27,17 +27,17 @@ describe('PlatformRuleSync', () => {
 
     const results = sync.syncAll(paths, skillIndex);
 
-    assert.ok(results.length === 6, 'Should sync 6 platform files');
+    assert.ok(results.length === 5, 'Should sync 5 platform files (Cloud.md removed in 0.4.2)');
     assert.ok(results.some((r) => r.updated), 'At least one should be updated');
 
     const cursorrules = readFileSync(join(TEST_DIR, '.cursorrules'), 'utf-8');
-    assert.ok(cursorrules.includes('agentskills.io SKILL.md'), 'Should mention agentskills.io format');
+    assert.ok(cursorrules.includes('SKILL.md'), 'Should mention SKILL.md format');
     assert.ok(cursorrules.includes('better-sqlite3-patterns'), 'Should list skills');
     assert.ok(cursorrules.includes('gateway-pattern'), 'Should list skills');
     assert.ok(cursorrules.includes('mcp_codeimpact_memory_evolve'), 'Should use cursor tool names');
     assert.ok(cursorrules.includes('create_skill'), 'Should have creation protocol');
     assert.ok(cursorrules.includes('improve_skill'), 'Should have improvement protocol');
-    assert.ok(cursorrules.includes('list_signals'), 'Should reference list_signals');
+    assert.ok(cursorrules.includes('memory_evolve'), 'Should reference memory_evolve');
   });
 
   it('should use correct tool names for each platform', () => {
@@ -123,7 +123,7 @@ describe('PlatformRuleSync', () => {
     const content = readFileSync(join(TEST_DIR, '.cursorrules'), 'utf-8');
     assert.ok(content.includes('Under 5000 tokens'), 'Should have token limit guideline');
     assert.ok(content.includes('Be specific'), 'Should have specificity guideline');
-    assert.ok(content.includes('Pitfalls with symptoms'), 'Should have pitfall guideline');
+    assert.ok(content.includes('pitfalls with symptoms'), 'Should have pitfall guideline');
   });
 
   it('should not reference scaffolds anywhere', () => {
