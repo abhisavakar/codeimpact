@@ -18,6 +18,7 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 
@@ -36,6 +37,10 @@ coverage/
 # Claude Code
 .claude/
 
+# CodeImpact runtime data
+.code-impact/
+.codeimpact/
+
 # NeuronLayer data (generated at runtime)
 .neuronlayer/
 .memorylayer/
@@ -43,6 +48,15 @@ coverage/
 # User-specific MCP config
 .mcp.json
 opencode.json
+.cursorrules
+
+# Generated IDE instruction files
+AGENTS.md
+CODEX.md
+Cloud.md
+
+# Knowledge workspace (runtime generated)
+knowledge/
 
 # Internal documentation
 # (doc/ is intentionally committed)

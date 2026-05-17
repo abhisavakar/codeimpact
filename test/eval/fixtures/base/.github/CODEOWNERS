@@ -1,0 +1,8 @@
+# Auth team owns auth module
+src/auth/ @team-auth
+
+# Billing team owns billing module
+src/billing/ @team-billing
+
+# API team owns API layer
+src/api/ @team-api

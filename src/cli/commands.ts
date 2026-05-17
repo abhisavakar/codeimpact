@@ -2075,6 +2075,118 @@ export function executeCLI(args: string[]): void {
       break;
     }
 
+    case 'agents': {
+      // Parse agents options
+      let projectPath: string | undefined;
+      let force = false;
+      let pr = false;
+      let push = false;
+      let techName: string | undefined;
+
+      for (let i = 2; i < args.length; i++) {
+        const arg = args[i];
+        const nextArg = args[i + 1];
+        if ((arg === '--project' || arg === '-p') && nextArg) {
+          projectPath = nextArg;
+          i++;
+        } else if (arg === '--force') {
+          force = true;
+        } else if (arg === '--pr') {
+          pr = true;
+        } else if (arg === '--push') {
+          push = true;
+        } else if (arg === '--tech' && nextArg) {
+          techName = nextArg;
+          i++;
+        }
+      }
+
+      const agentProjectPath = projectPath || process.cwd();
+
+      switch (subcommand) {
+        case 'init': {
+          const { agentsInit } = require('../core/agents/index.js');
+          const initResult = agentsInit(agentProjectPath);
+          console.log(initResult.message);
+          break;
+        }
+        case 'generate': {
+          const { agentsGenerate } = require('../core/agents/index.js');
+          const genPromise = agentsGenerate({ projectPath: agentProjectPath, force, pr, push });
+          genPromise.then((genResult: { message: string; success: boolean }) => {
+            console.log(genResult.message);
+            if (!genResult.success) process.exit(1);
+            process.exit(0);
+          }).catch((err: Error) => {
+            console.error('Error:', err.message);
+            process.exit(1);
+          });
+          // Keep process alive until promise resolves
+          return;
+        }
+        case 'research': {
+          const { detectTechnologies, researchAllTechnologies } = require('../core/agents/index.js');
+          const { readAgentConfig } = require('../core/agents/workspace.js');
+          const config = readAgentConfig(agentProjectPath);
+          let techs = detectTechnologies(agentProjectPath);
+          if (techName) {
+            techs = techs.filter((t: { name: string }) => t.name === techName);
+          }
+          researchAllTechnologies(agentProjectPath, techs.slice(0, 20), {
+            maxTokensPerTech: config.research_max_tokens_per_tech,
+            cadenceHours: config.research_cadence_hours,
+            force,
+          }).then((results: Array<{ technology: string; status: string }>) => {
+            console.log(`Research complete: ${results.length} technologies processed`);
+            for (const r of results) {
+              console.log(`  ${r.technology}: ${r.status}`);
+            }
+            process.exit(0);
+          }).catch((err: Error) => {
+            console.error('Error:', err.message);
+            process.exit(1);
+          });
+          // Keep process alive until promise resolves
+          return;
+        }
+        case 'status': {
+          const { agentsStatus } = require('../core/agents/index.js');
+          const status = agentsStatus(agentProjectPath);
+          if (!status.initialized) {
+            console.log('Agent system not initialized. Run: codeimpact agents init');
+          } else {
+            console.log('Agent System Status:');
+            console.log(`  Technologies: ${status.technologies}`);
+            console.log(`  Features: ${status.features}`);
+            console.log(`  Research files: ${status.researchFiles} (${status.staleResearch} stale)`);
+            console.log(`  Outcomes: ${status.outcomes.total} total (${status.outcomes.successes} success, ${status.outcomes.failures} failures)`);
+            console.log(`  Monorepo: ${status.monorepo || 'no'}`);
+            console.log(`  Uncommitted changes: ${status.hasChanges ? 'yes' : 'no'}`);
+          }
+          break;
+        }
+        case 'migrate': {
+          // Migrate from knowledge/ to .code-impact/
+          const { agentsInit, agentsGenerate } = require('../core/agents/index.js');
+          agentsInit(agentProjectPath);
+          console.log('Migrating from knowledge/ to .code-impact/...');
+          agentsGenerate({ projectPath: agentProjectPath, force: true }).then((genResult: { message: string }) => {
+            console.log('Migration complete. ' + genResult.message);
+            console.log('Note: knowledge/ directory is preserved (both systems can coexist).');
+          }).catch((err: Error) => {
+            console.error('Error:', err.message);
+            process.exit(1);
+          });
+          break;
+        }
+        default:
+          console.error(`Unknown agents subcommand: ${subcommand}`);
+          console.error('Available: init, generate, research, status, migrate');
+          process.exit(1);
+      }
+      break;
+    }
+
     default:
       // If no command matches, it might be the default MCP server mode
       // Return without handling - let main() handle it

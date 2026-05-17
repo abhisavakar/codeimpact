@@ -65,3 +65,346 @@ codeimpact stats
 # Force reindex after git issues (revert, reset, etc.)
 codeimpact reindex
 ```
+
+## Tools
+| Task | Tool |
+|------|------|
+| Find code | `mcp__codeimpact__memory_query` |
+| Check code | `mcp__codeimpact__memory_review` |
+| Verify code | `mcp__codeimpact__memory_verify` |
+| Project status | `mcp__codeimpact__memory_status` |
+| Impact analysis | `mcp__codeimpact__memory_blast_radius` |
+| Build knowledge | `mcp__codeimpact__memory_evolve` |
+
+## Session Start
+1. Run `mcp__codeimpact__memory_status` — check `knowledge_gaps` for uncovered technologies and high-risk files.
+2. Read relevant skills from `knowledge/skills/` for the current task.
+
+## Skill Creation Protocol
+
+**After completing any task involving 3+ files**, create or improve a skill.
+
+### To create a new skill:
+`mcp__codeimpact__memory_evolve` with:
+- action="create_skill"
+- name="technology-or-area-name" (slug format)
+- description="One line: when to use this skill"
+- scope="technology|feature|risk|core"
+- content="Full markdown body (see format below)"
+
+### To improve an existing skill:
+`mcp__codeimpact__memory_evolve` with:
+- action="improve_skill", skill_id="skill-name"
+- Patch mode: old_text="exact text to replace", new_text="replacement"
+- Append mode: section="pitfalls", content="New pitfall to add"
+
+### To discover gaps:
+`mcp__codeimpact__memory_evolve` with action="list_signals"
+
+### Skill Format (agentskills.io SKILL.md)
+
+```markdown
+---
+name: better-sqlite3-patterns
+description: Synchronous database patterns. Use when working with database queries or schema changes.
+version: 1.0
+metadata:
+  scope: technology
+  created_by: ai
+---
+
+# better-sqlite3 Patterns
+
+## When to Use
+When modifying database queries, adding tables, or working with files that import from src/storage/database.ts.
+
+## Key Facts
+- Database: .codeimpact/codeimpact.db (SQLite, WAL mode)
+- API: better-sqlite3 (synchronous, NOT async)
+
+## Rules
+- ALL database access goes through database.ts — never import better-sqlite3 directly.
+- Use db.prepare().all() for SELECT, db.prepare().run() for INSERT/UPDATE/DELETE.
+
+## Pitfalls
+- db.exec() returns nothing. If you use it for SELECT, you get undefined.
+- better-sqlite3 is synchronous. Do NOT wrap in async/await.
+
+## Verification
+- npx tsc --noEmit passes with no type errors on database code.
+```
+
+### Quality Rules
+- **Under 5000 tokens** per skill
+- **Be specific**: "Use db.prepare().all() for SELECT" not "follow project patterns"
+- **Pitfalls with symptoms**: "you'll get undefined" not "don't misuse"
+- **Every line earns its tokens** — no filler, no generic advice the AI already knows
+
+## Existing Skills
+- No skills yet — create your first after completing a task
+
+
+## Workspace
+`E:/Coding/fullstackoverweekend/codeimpact/knowledge`
+<!-- codeimpact:knowledge:end -->
+
+<!-- codeimpact:knowledge:start -->
+# CodeImpact Knowledge System
+
+You are part of a **self-improving knowledge system**. Skills you create persist across sessions. Future AI sessions benefit from the knowledge you build now.
+
+## Tools
+| Task | Tool |
+|------|------|
+| Find code | `mcp__codeimpact__memory_query` |
+| Check code | `mcp__codeimpact__memory_review` |
+| Verify code | `mcp__codeimpact__memory_verify` |
+| Project status | `mcp__codeimpact__memory_status` |
+| Impact analysis | `mcp__codeimpact__memory_blast_radius` |
+| Build knowledge | `mcp__codeimpact__memory_evolve` |
+
+## Session Start
+1. Run `mcp__codeimpact__memory_status` — check `knowledge_gaps` for uncovered technologies and high-risk files.
+2. Read relevant skills from `knowledge/skills/` for the current task.
+
+## Skill Creation Protocol
+
+**After completing any task involving 3+ files**, create or improve a skill.
+
+### To create a new skill:
+`mcp__codeimpact__memory_evolve` with:
+- action="create_skill"
+- name="technology-or-area-name" (slug format)
+- description="One line: when to use this skill"
+- scope="technology|feature|risk|core"
+- content="Full markdown body (see format below)"
+
+### To improve an existing skill:
+`mcp__codeimpact__memory_evolve` with:
+- action="improve_skill", skill_id="skill-name"
+- Patch mode: old_text="exact text to replace", new_text="replacement"
+- Append mode: section="pitfalls", content="New pitfall to add"
+
+### To discover gaps:
+`mcp__codeimpact__memory_evolve` with action="list_signals"
+
+### Skill Format (agentskills.io SKILL.md)
+
+```markdown
+---
+name: better-sqlite3-patterns
+description: Synchronous database patterns. Use when working with database queries or schema changes.
+version: 1.0
+metadata:
+  scope: technology
+  created_by: ai
+---
+
+# better-sqlite3 Patterns
+
+## When to Use
+When modifying database queries, adding tables, or working with files that import from src/storage/database.ts.
+
+## Key Facts
+- Database: .codeimpact/codeimpact.db (SQLite, WAL mode)
+- API: better-sqlite3 (synchronous, NOT async)
+
+## Rules
+- ALL database access goes through database.ts — never import better-sqlite3 directly.
+- Use db.prepare().all() for SELECT, db.prepare().run() for INSERT/UPDATE/DELETE.
+
+## Pitfalls
+- db.exec() returns nothing. If you use it for SELECT, you get undefined.
+- better-sqlite3 is synchronous. Do NOT wrap in async/await.
+
+## Verification
+- npx tsc --noEmit passes with no type errors on database code.
+```
+
+### Quality Rules
+- **Under 5000 tokens** per skill
+- **Be specific**: "Use db.prepare().all() for SELECT" not "follow project patterns"
+- **Pitfalls with symptoms**: "you'll get undefined" not "don't misuse"
+- **Every line earns its tokens** — no filler, no generic advice the AI already knows
+
+## Existing Skills
+- No skills yet — create your first after completing a task
+
+
+## Workspace
+`E:/Coding/fullstackoverweekend/codeimpact/knowledge`
+<!-- codeimpact:knowledge:end -->
+
+<!-- codeimpact:knowledge:start -->
+# CodeImpact Knowledge System
+
+You are part of a **self-improving knowledge system**. Skills you create persist across sessions. Future AI sessions benefit from the knowledge you build now.
+
+## Tools
+| Task | Tool |
+|------|------|
+| Find code | `mcp__codeimpact__memory_query` |
+| Check code | `mcp__codeimpact__memory_review` |
+| Verify code | `mcp__codeimpact__memory_verify` |
+| Project status | `mcp__codeimpact__memory_status` |
+| Impact analysis | `mcp__codeimpact__memory_blast_radius` |
+| Build knowledge | `mcp__codeimpact__memory_evolve` |
+
+## Session Start
+1. Run `mcp__codeimpact__memory_status` — check `knowledge_gaps` for uncovered technologies and high-risk files.
+2. Read relevant skills from `knowledge/skills/` for the current task.
+
+## Skill Creation Protocol
+
+**After completing any task involving 3+ files**, create or improve a skill.
+
+### To create a new skill:
+`mcp__codeimpact__memory_evolve` with:
+- action="create_skill"
+- name="technology-or-area-name" (slug format)
+- description="One line: when to use this skill"
+- scope="technology|feature|risk|core"
+- content="Full markdown body (see format below)"
+
+### To improve an existing skill:
+`mcp__codeimpact__memory_evolve` with:
+- action="improve_skill", skill_id="skill-name"
+- Patch mode: old_text="exact text to replace", new_text="replacement"
+- Append mode: section="pitfalls", content="New pitfall to add"
+
+### To discover gaps:
+`mcp__codeimpact__memory_evolve` with action="list_signals"
+
+### Skill Format (agentskills.io SKILL.md)
+
+```markdown
+---
+name: better-sqlite3-patterns
+description: Synchronous database patterns. Use when working with database queries or schema changes.
+version: 1.0
+metadata:
+  scope: technology
+  created_by: ai
+---
+
+# better-sqlite3 Patterns
+
+## When to Use
+When modifying database queries, adding tables, or working with files that import from src/storage/database.ts.
+
+## Key Facts
+- Database: .codeimpact/codeimpact.db (SQLite, WAL mode)
+- API: better-sqlite3 (synchronous, NOT async)
+
+## Rules
+- ALL database access goes through database.ts — never import better-sqlite3 directly.
+- Use db.prepare().all() for SELECT, db.prepare().run() for INSERT/UPDATE/DELETE.
+
+## Pitfalls
+- db.exec() returns nothing. If you use it for SELECT, you get undefined.
+- better-sqlite3 is synchronous. Do NOT wrap in async/await.
+
+## Verification
+- npx tsc --noEmit passes with no type errors on database code.
+```
+
+### Quality Rules
+- **Under 5000 tokens** per skill
+- **Be specific**: "Use db.prepare().all() for SELECT" not "follow project patterns"
+- **Pitfalls with symptoms**: "you'll get undefined" not "don't misuse"
+- **Every line earns its tokens** — no filler, no generic advice the AI already knows
+
+## Existing Skills
+- No skills yet — create your first after completing a task
+
+
+## Workspace
+`E:/Coding/fullstackoverweekend/codeimpact/knowledge`
+<!-- codeimpact:knowledge:end -->
+
+<!-- codeimpact:knowledge:start -->
+# CodeImpact Knowledge System
+
+You are part of a **self-improving knowledge system**. Skills you create persist across sessions. Future AI sessions benefit from the knowledge you build now.
+
+## Tools
+| Task | Tool |
+|------|------|
+| Find code | `mcp__codeimpact__memory_query` |
+| Check code | `mcp__codeimpact__memory_review` |
+| Verify code | `mcp__codeimpact__memory_verify` |
+| Project status | `mcp__codeimpact__memory_status` |
+| Impact analysis | `mcp__codeimpact__memory_blast_radius` |
+| Build knowledge | `mcp__codeimpact__memory_evolve` |
+
+## Session Start
+1. Run `mcp__codeimpact__memory_status` — check `knowledge_gaps` for uncovered technologies and high-risk files.
+2. Read relevant skills from `knowledge/skills/` for the current task.
+
+## Skill Creation Protocol
+
+**After completing any task involving 3+ files**, create or improve a skill.
+
+### To create a new skill:
+`mcp__codeimpact__memory_evolve` with:
+- action="create_skill"
+- name="technology-or-area-name" (slug format)
+- description="One line: when to use this skill"
+- scope="technology|feature|risk|core"
+- content="Full markdown body (see format below)"
+
+### To improve an existing skill:
+`mcp__codeimpact__memory_evolve` with:
+- action="improve_skill", skill_id="skill-name"
+- Patch mode: old_text="exact text to replace", new_text="replacement"
+- Append mode: section="pitfalls", content="New pitfall to add"
+
+### To discover gaps:
+`mcp__codeimpact__memory_evolve` with action="list_signals"
+
+### Skill Format (agentskills.io SKILL.md)
+
+```markdown
+---
+name: better-sqlite3-patterns
+description: Synchronous database patterns. Use when working with database queries or schema changes.
+version: 1.0
+metadata:
+  scope: technology
+  created_by: ai
+---
+
+# better-sqlite3 Patterns
+
+## When to Use
+When modifying database queries, adding tables, or working with files that import from src/storage/database.ts.
+
+## Key Facts
+- Database: .codeimpact/codeimpact.db (SQLite, WAL mode)
+- API: better-sqlite3 (synchronous, NOT async)
+
+## Rules
+- ALL database access goes through database.ts — never import better-sqlite3 directly.
+- Use db.prepare().all() for SELECT, db.prepare().run() for INSERT/UPDATE/DELETE.
+
+## Pitfalls
+- db.exec() returns nothing. If you use it for SELECT, you get undefined.
+- better-sqlite3 is synchronous. Do NOT wrap in async/await.
+
+## Verification
+- npx tsc --noEmit passes with no type errors on database code.
+```
+
+### Quality Rules
+- **Under 5000 tokens** per skill
+- **Be specific**: "Use db.prepare().all() for SELECT" not "follow project patterns"
+- **Pitfalls with symptoms**: "you'll get undefined" not "don't misuse"
+- **Every line earns its tokens** — no filler, no generic advice the AI already knows
+
+## Existing Skills
+- No skills yet — create your first after completing a task
+
+
+## Workspace
+`E:/Coding/fullstackoverweekend/codeimpact/knowledge`
+<!-- codeimpact:knowledge:end -->

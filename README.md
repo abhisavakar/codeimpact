@@ -13,7 +13,7 @@
 npm i codeimpact
 ```
 
-CodeImpact is an MCP server that indexes your codebase and gives AI assistants like Claude the ability to understand your project's structure, dependencies, and history across sessions. It also includes an **AI-driven knowledge system** where AI assistants create and maintain project-specific skills using the [agentskills.io](https://agentskills.io) open standard.
+CodeImpact is an MCP server that indexes your codebase and gives AI assistants like Claude the ability to understand your project's structure, dependencies, and history across sessions. It also includes a **Super Agent System** — a self-improving multi-agent architecture that detects features, generates knowledge artifacts, learns from mistakes, and continuously improves code quality using the [agentskills.io](https://agentskills.io) open standard.
 
 ---
 
@@ -21,11 +21,15 @@ CodeImpact is an MCP server that indexes your codebase and gives AI assistants l
 
 - **Indexes your code** - Extracts functions, classes, imports, and exports using true Tree-sitter AST parsing
 - **Builds a dependency graph** - Tracks what files import what, transitively
+- **Super Agent System** - Self-improving multi-agent architecture with feature detection, research distillation, and outcome-driven learning
 - **AI Knowledge System** - AI assistants create reusable SKILL.md files that persist across sessions
 - **Dead code detection** - Finds unused exports and orphan files with confidence scoring
 - **Test impact analysis** - Shows which tests to run when you change a file
 - **Blast radius analysis** - Risk scoring and critical path detection for any file change
 - **Knowledge gap detection** - Identifies uncovered technologies and high-risk areas
+- **Self-learning loop** - Records outcomes, diagnoses failures, promotes confirmed patterns to rules
+- **Agent lifecycle management** - Proposes merge/split/prune of feature agents based on git history
+- **Research distillation** - Fetches and distills technology documentation with trust scoring
 - **Cost tracking** - Monitors token usage and costs for CodeImpact queries
 - **Detects circular dependencies** - Finds import cycles in your codebase
 - **Records decisions** - Stores architectural decisions that persist across sessions
@@ -55,16 +59,65 @@ This registers your project and configures Claude Desktop, Claude Code, OpenCode
 
 ---
 
-## AI Knowledge System
+## Super Agent System
 
-CodeImpact includes a self-improving knowledge system where AI assistants create, maintain, and learn from project-specific skills. Skills are stored as **SKILL.md** files following the [agentskills.io](https://agentskills.io) open standard — compatible with Claude Code, Cursor, Codex, Gemini CLI, and 27+ other AI agents.
+CodeImpact includes a production-grade multi-agent system that automatically detects project features, generates knowledge artifacts, learns from mistakes, and continuously improves. The system generates **SKILL.md** and **AGENT.md** files following the [agentskills.io](https://agentskills.io) open standard — compatible with Claude Code, Cursor, Codex, Gemini CLI, and 27+ other AI agents.
 
 ### How It Works
 
-1. **Static analysis detects signals** — technologies, high-risk files, patterns
-2. **AI creates skills after real work** — not templates, real project knowledge
-3. **Skills persist across sessions** — future AI sessions benefit from past knowledge
-4. **Progressive disclosure** — only skill names load at startup; full content loads on demand
+1. **Technology detection** — scans lockfiles, manifests, and configs to identify your stack
+2. **Feature detection** — clusters source files into cohesive features using directory structure, import graphs, and CODEOWNERS
+3. **Research distillation** — fetches and distills technology documentation with trust scoring
+4. **Agent generation** — creates feature-scoped agents with scope boundaries, allowed tools, and success criteria
+5. **Self-learning loop** — records outcomes, diagnoses failures using a 15-rule decision table, and promotes confirmed patterns to rules
+6. **Lifecycle management** — proposes merge/split/prune of agents based on git co-change analysis
+
+### Self-Learning Pipeline
+
+```
+Outcome recorded → Diagnose (15-rule decision table)
+  → wrong-assumption + fix → Patch SKILL.md immediately
+  → outdated-research → Flag for re-research
+  → 2+ similar failures → Write lesson to AGENT.md (quarantine)
+  → 3+ confirmations → Promote lesson to SKILL.md Rules
+  → 90 days unconfirmed → Decay lesson
+```
+
+### Agent Workspace Structure
+
+```
+your-project/
+├── .code-impact/                  # Agent workspace (auto-generated)
+│   ├── config.yaml                # Configuration
+│   ├── index.json                 # Manifest with tech, features, outcomes
+│   ├── project/                   # Project-wide knowledge
+│   │   ├── SKILL.md               # Technology stack + conventions
+│   │   ├── CONVENTIONS.md         # Coding standards
+│   │   ├── ARCHITECTURE.md        # System architecture
+│   │   └── AGENT.md               # Super agent (coordinator)
+│   ├── research/                  # Distilled tech documentation
+│   │   └── express@4.21.0.md      # With trust scores + structured sections
+│   └── features/                  # Feature-specific knowledge
+│       └── auth/
+│           ├── SKILL.md           # Feature rules, pitfalls, research refs
+│           └── AGENT.md           # Scope, tools, lessons learned
+├── AGENTS.md                      # Top-level agent directory (auto-generated)
+├── knowledge/                     # Legacy knowledge workspace
+│   └── skills/                    # AI-created SKILL.md files
+├── .codeimpact/
+│   └── codeimpact.db              # SQLite database
+└── src/
+```
+
+### CLI Commands for Agents
+
+```bash
+codeimpact agents init             # Initialize agent workspace
+codeimpact agents generate         # Run full pipeline (detect → research → generate)
+codeimpact agents status           # Show agent system health + lifecycle proposals
+codeimpact agents research         # Refresh technology research
+codeimpact agents migrate          # Migrate knowledge/ → .code-impact/
+```
 
 ### Skill Format (agentskills.io SKILL.md)
 
@@ -96,40 +149,17 @@ that imports from src/storage/database.ts.
 - npx tsc --noEmit passes with no type errors on database code.
 ```
 
-### Knowledge Structure
-
-```
-your-project/
-├── knowledge/
-│   ├── skills/
-│   │   ├── technology/
-│   │   │   └── better-sqlite3-patterns/
-│   │   │       └── SKILL.md
-│   │   ├── features/
-│   │   │   └── gateway-pattern/
-│   │   │       └── SKILL.md
-│   │   └── risk/
-│   │       └── high-risk-files/
-│   │           └── SKILL.md
-│   ├── docs/
-│   │   ├── architecture/
-│   │   ├── features/
-│   │   └── integrations/
-│   └── index.json
-├── .codeimpact/
-│   └── codeimpact.db
-└── src/
-```
-
-### MCP Tools for Knowledge
+### MCP Tools
 
 | Tool | What It Does |
 |------|-------------|
-| `memory_status` | Project overview + `knowledge_gaps` showing uncovered technologies |
+| `memory_status` | Project overview + knowledge gaps + lifecycle proposals |
+| `memory_agents` | List/get agents, skills, research; validate scope; record outcomes; telemetry dashboard |
 | `memory_evolve` | Create/improve skills, report outcomes, list signals |
 | `memory_query` | Semantic search across code and knowledge |
 | `memory_review` | Check code against learned patterns and skill rules |
 | `memory_verify` | Pre-commit quality checks using skill verification rules |
+| `memory_ghost` | Proactive intelligence — conflict detection, deja vu, session resurrection |
 | `memory_blast_radius` | Impact analysis with skill-aware recommendations |
 
 ---
@@ -251,6 +281,14 @@ Once CodeImpact is running, your AI assistant can:
 "What skills exist for the database layer?"
 ```
 
+**Agent system:**
+```
+"List all agents and their scopes"
+"Validate if auth-agent can modify src/billing/pay.ts"
+"Show the telemetry dashboard for this week"
+"What lifecycle proposals exist?"
+```
+
 **Find dead code:**
 ```
 "Are there any unused exports in this project?"
@@ -275,15 +313,18 @@ Once CodeImpact is running, your AI assistant can:
 
 CodeImpact watches your project and maintains:
 
-1. **Symbol index** - Functions, classes, imports, exports
-2. **Dependency graph** - File-to-file import relationships
-3. **Knowledge workspace** - AI-created SKILL.md files and documentation
-4. **Decision log** - Architectural decisions you've recorded
-5. **Embeddings** - For semantic search (using MiniLM-L6 locally)
-6. **Test index** - Test files and their coverage mappings
-7. **Token usage** - Query tracking for cost analysis
+1. **Symbol index** - Functions, classes, imports, exports via Tree-sitter AST
+2. **Dependency graph** - File-to-file import relationships (transitive)
+3. **Agent workspace** - Auto-generated SKILL.md, AGENT.md, and research files
+4. **Self-learning loop** - Outcome recording, diagnosis, lesson writing, and promotion
+5. **Research cache** - Distilled technology docs with trust scoring and staleness tracking
+6. **Decision log** - Architectural decisions that persist across sessions
+7. **Embeddings** - Semantic search using MiniLM-L6 locally
+8. **Telemetry** - Generation, learning, and research event tracking (local SQLite)
+9. **Lifecycle proposals** - Merge/split/prune suggestions from git co-change analysis
+10. **Token usage** - Query tracking for cost analysis
 
-When your AI assistant asks a question, CodeImpact provides the relevant context. When the AI completes work, it captures what it learned as skills for future sessions.
+When your AI assistant asks a question, CodeImpact provides the relevant context. When the AI completes work, the self-learning loop captures what happened — successes confirm existing knowledge, failures trigger diagnosis and improvement.
 
 ---
 
@@ -313,6 +354,14 @@ codeimpact deadcode          # Find unused exports and dead code
 codeimpact test-impact       # Find which tests to run for changes
 codeimpact impact <file>     # Analyze blast radius of a file
 codeimpact stats             # Show token usage and costs
+codeimpact reindex           # Force reindex after git operations
+
+# Agent System
+codeimpact agents init       # Initialize agent workspace
+codeimpact agents generate   # Detect → research → generate → learn
+codeimpact agents status     # Health, outcomes, lifecycle proposals
+codeimpact agents research   # Refresh technology research
+codeimpact agents migrate    # Migrate knowledge/ → .code-impact/
 
 # Project Management
 codeimpact projects list     # List registered projects
@@ -394,18 +443,24 @@ Project data is stored locally in each project:
 ```
 your-project/
 ├── .codeimpact/
-│   ├── codeimpact.db       # SQLite database
-│   ├── tier1.json          # Hot context cache
+│   ├── codeimpact.db        # SQLite database (index, outcomes, telemetry)
+│   ├── tier1.json           # Hot context cache
 │   └── feature-context.json # Session tracking
-├── knowledge/
-│   ├── skills/             # AI-created SKILL.md files
-│   ├── docs/               # Generated documentation
-│   └── index.json          # Knowledge manifest
+├── .code-impact/            # Agent workspace (auto-generated)
+│   ├── config.yaml          # Agent system configuration
+│   ├── index.json           # Technologies, features, outcomes, lifecycle
+│   ├── project/             # Project-wide SKILL/CONVENTIONS/ARCHITECTURE/AGENT
+│   ├── research/            # Distilled tech docs with trust scores
+│   └── features/            # Per-feature SKILL + AGENT files
+├── knowledge/               # Legacy knowledge workspace
+│   ├── skills/              # AI-created SKILL.md files
+│   ├── docs/                # Generated documentation
+│   └── index.json           # Knowledge manifest
 ├── src/
 └── ...
 ```
 
-Each project has its own isolated `.codeimpact/` folder and `knowledge/` workspace - no cross-contamination between projects.
+Each project has its own isolated data — no cross-contamination between projects. The `.code-impact/` agent workspace is the primary knowledge store; `knowledge/` is supported for backward compatibility and can be migrated via `codeimpact agents migrate`.
 
 Global registry for project listing:
 ```
@@ -431,7 +486,31 @@ git clone https://github.com/abhisavakar/codeimpact.git
 cd codeimpact
 npm install
 npm run build
-npm test
+npm test              # 120+ tests including 10 eval scenarios
+```
+
+### Architecture
+
+```
+src/core/agents/                  # Super Agent System (12 modules)
+├── orchestrator.ts               # Pipeline: init → detect → research → generate → learn
+├── tech-detector.ts              # Lockfile + manifest scanning
+├── feature-detector.ts           # Cohesion clustering + CODEOWNERS
+├── research-engine.ts            # Fetch + distill + trust scoring
+├── generator.ts                  # SKILL.md / CONVENTIONS.md / ARCHITECTURE.md
+├── agent-generator.ts            # AGENT.md + AGENTS.md shim
+├── improvement-engine.ts         # Self-learning: diagnose → learn → promote → decay
+├── diagnosis-table.ts            # 15-rule declarative error classification
+├── outcome-storage.ts            # SQLite agent_outcomes table
+├── lifecycle.ts                  # Merge/split/prune proposals
+├── telemetry.ts                  # Event emission + dashboard queries
+├── marker-writer.ts              # Content-hash dedup + token budgets
+├── token-budget.ts               # Section-priority truncation
+├── migration.ts                  # knowledge/ → .code-impact/ migration
+├── research-trust.ts             # 7-signal trust scoring
+├── remote-provider.ts            # GitHub/GitLab/Bitbucket abstraction
+├── co-change-analyzer.ts         # Git log analysis for feature coupling
+└── workspace.ts                  # Directory management + config
 ```
 
 ---

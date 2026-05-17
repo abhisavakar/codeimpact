@@ -26,6 +26,7 @@ import { handleMemoryStatus } from './memory-status.js';
 import { handleMemoryGhost, type MemoryGhostInput, type MemoryGhostResponse } from './memory-ghost.js';
 import { handleMemoryVerify, type MemoryVerifyResponse } from './memory-verify.js';
 import { handleMemoryEvolve, type MemoryEvolveInput, type MemoryEvolveResponse } from './memory-evolve.js';
+import { handleMemoryAgents, type MemoryAgentsInput, type MemoryAgentsResponse } from './memory-agents.js';
 
 // ============================================================================
 // Gateway Tool Names
@@ -39,6 +40,7 @@ export const GATEWAY_TOOLS = [
   'memory_ghost',
   'memory_verify',
   'memory_evolve',
+  'memory_agents',
 ] as const;
 
 export type GatewayToolName = typeof GATEWAY_TOOLS[number];
@@ -381,6 +383,95 @@ export const gatewayDefinitions: ToolDefinition[] = [
       },
       required: ['action']
     }
+  },
+  {
+    name: 'memory_agents',
+    description: 'Super Agent System tools. action="list_skills" to list all project/feature skills. action="list_agents" to list all defined agents. action="get_skill" to get skill content (pass name). action="get_agent" to get agent definition (pass name). action="get_research" to get distilled tech docs (pass technology). action="validate_action" to check if an action is within agent scope (pass agent, path, tool). action="record_outcome" to record execution results for learning (pass agent, task, result). action="propose_improvement" to suggest skill/agent improvements (pass target, section, content, evidence).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list_skills', 'list_agents', 'get_skill', 'get_agent', 'get_research', 'validate_action', 'record_outcome', 'propose_improvement', 'get_telemetry', 'get_dashboard'],
+          description: 'What to do'
+        },
+        name: {
+          type: 'string',
+          description: 'Skill or agent name (for get_skill, get_agent)'
+        },
+        scope: {
+          type: 'string',
+          enum: ['project', 'feature'],
+          description: 'Filter skills by scope (for list_skills)'
+        },
+        feature: {
+          type: 'string',
+          description: 'Filter by feature name (for list_skills)'
+        },
+        technology: {
+          type: 'string',
+          description: 'Technology name (for get_research)'
+        },
+        version: {
+          type: 'string',
+          description: 'Technology version (for get_research)'
+        },
+        agent: {
+          type: 'string',
+          description: 'Agent name (for validate_action, record_outcome)'
+        },
+        path: {
+          type: 'string',
+          description: 'File path to validate (for validate_action)'
+        },
+        tool: {
+          type: 'string',
+          description: 'Tool being used (for validate_action)'
+        },
+        task: {
+          type: 'string',
+          description: 'Task description (for record_outcome)'
+        },
+        result: {
+          type: 'string',
+          enum: ['success', 'failure', 'partial'],
+          description: 'Outcome result (for record_outcome)'
+        },
+        error: {
+          type: 'string',
+          description: 'Error message (for record_outcome)'
+        },
+        error_file: {
+          type: 'string',
+          description: 'Error file path (for record_outcome)'
+        },
+        diff: {
+          type: 'string',
+          description: 'Code diff (for record_outcome)'
+        },
+        fix: {
+          type: 'string',
+          description: 'Fix applied (for record_outcome)'
+        },
+        target: {
+          type: 'string',
+          description: 'Target skill/agent (for propose_improvement)'
+        },
+        section: {
+          type: 'string',
+          description: 'Section to improve (for propose_improvement)'
+        },
+        content: {
+          type: 'string',
+          description: 'Improvement content (for propose_improvement)'
+        },
+        evidence: {
+          type: 'string',
+          description: 'Evidence for improvement (for propose_improvement)'
+        }
+      },
+      required: ['action']
+    }
   }
 ];
 
@@ -611,6 +702,9 @@ export async function handleGatewayCall(
     case 'memory_evolve':
       return handleMemoryEvolve(engine, args as unknown as MemoryEvolveInput);
 
+    case 'memory_agents':
+      return handleMemoryAgents(engine, args as unknown as MemoryAgentsInput);
+
     default:
       throw new Error(`Unknown gateway: ${gatewayName}`);
   }
@@ -634,3 +728,4 @@ export type {
 export type { MemoryGhostInput, MemoryGhostResponse } from './memory-ghost.js';
 export type { MemoryVerifyResponse as VerifyResponse } from './memory-verify.js';
 export type { MemoryEvolveInput, MemoryEvolveResponse } from './memory-evolve.js';
+export type { MemoryAgentsInput, MemoryAgentsResponse } from './memory-agents.js';
