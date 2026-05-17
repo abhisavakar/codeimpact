@@ -130,11 +130,15 @@ export async function agentsGenerate(options: OrchestratorOptions): Promise<Gene
   const importGraph = options.importGraph || new Map<string, string[]>();
   const indexedFiles = options.indexedFiles || getIndexedFilesFromFS(projectPath);
 
+  // Build file→technology map from import analysis
+  const fileTechMap = buildFileTechMap(projectPath, indexedFiles, technologies);
+
   const featureInput: FeatureDetectorInput = {
     projectPath,
     config: config.feature_detection,
     importGraph,
     indexedFiles,
+    fileTechMap,
   };
   const features = detectFeatures(featureInput);
   result.features = features.length;
@@ -415,30 +419,66 @@ function createMinimalIntelligence(
   technologies: DetectedTechnology[],
   features: DetectedFeature[],
 ): ProjectIntelligence {
+  // Count actual source files and lines
+  const sourceFiles = getIndexedFilesFromFS(projectPath);
+  const codeFiles = sourceFiles.filter(f =>
+    /\.(ts|tsx|js|jsx|py|go|rs|java|rb|php|cs|cpp|c|h)$/.test(f) &&
+    !f.includes('node_modules') && !f.includes('dist')
+  );
+
+  let totalLines = 0;
+  for (const f of codeFiles.slice(0, 500)) { // Cap to avoid slowness
+    try {
+      const content = readFileSync(join(projectPath, f), 'utf-8');
+      totalLines += content.split('\n').length;
+    } catch { /* skip */ }
+  }
+
+  // Detect languages from file extensions
+  const extCounts = new Map<string, number>();
+  for (const f of codeFiles) {
+    const ext = f.split('.').pop() || '';
+    const lang = extToLanguage(ext);
+    if (lang) extCounts.set(lang, (extCounts.get(lang) || 0) + 1);
+  }
+  const languages = [...extCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([lang]) => lang);
+
+  // Build architecture layers from features
+  const layers = features.map(f => ({
+    name: f.name.charAt(0).toUpperCase() + f.name.slice(1),
+    directory: f.paths[0]?.replace('/**', '') || f.name,
+    purpose: inferLayerPurpose(f.name),
+    fileCount: f.fileCount,
+  }));
+
+  // Detect test framework
+  const testFramework = detectTestFramework(projectPath);
+
   return {
     collectedAt: new Date().toISOString(),
     codebase: {
-      fileCount: 0,
-      totalLines: 0,
-      languages: [...new Set(technologies.map(t => {
-        if (t.source.includes('package')) return 'typescript';
-        if (t.source.includes('Cargo')) return 'rust';
-        if (t.source.includes('go.')) return 'go';
-        if (t.source.includes('requirements') || t.source.includes('pyproject')) return 'python';
-        return 'unknown';
-      }))],
+      fileCount: codeFiles.length,
+      totalLines,
+      languages: languages.length > 0 ? languages : ['typescript'],
       keyDirectories: features.map(f => f.paths[0]?.replace('/**', '') || ''),
       symbolCount: 0,
       description: '',
       architectureNotes: '',
     },
-    architecture: null,
+    architecture: {
+      layers,
+      dataFlow: inferDataFlow(features),
+      keyComponents: [],
+      functionStats: { total: 0, exported: 0 },
+    },
     dependencyHotspots: [],
     patterns: [],
     decisions: [],
     riskFiles: [],
     deadCode: null,
-    tests: { framework: 'unknown', testCount: 0, coverageGaps: [], uncoveredFunctions: [] },
+    tests: { framework: testFramework, testCount: 0, coverageGaps: [], uncoveredFunctions: [] },
     recentBugs: [],
     changeHotspots: [],
     activeFeature: null,
@@ -449,4 +489,108 @@ function createMinimalIntelligence(
       importPaths: t.importPaths || [],
     })),
   };
+}
+
+/**
+ * Build a file→technology map by scanning source files for import statements.
+ * Maps each source file to the npm packages it imports.
+ */
+function buildFileTechMap(
+  projectPath: string,
+  indexedFiles: string[],
+  technologies: DetectedTechnology[],
+): Map<string, string[]> {
+  const techNames = new Set(technologies.map(t => t.name));
+  const fileTechMap = new Map<string, string[]>();
+
+  const sourceFiles = indexedFiles.filter(f =>
+    /\.(ts|tsx|js|jsx)$/.test(f) &&
+    !f.includes('node_modules') && !f.includes('dist')
+  );
+
+  for (const file of sourceFiles.slice(0, 300)) { // Cap for performance
+    try {
+      const content = readFileSync(join(projectPath, file), 'utf-8');
+      const techs = new Set<string>();
+
+      // Match: import ... from 'package' or require('package')
+      const importRegex = /(?:from\s+['"]|require\s*\(\s*['"])([^./'"@][^'"]*|@[^/'"]+\/[^'"]+)/g;
+      let match: RegExpExecArray | null;
+      while ((match = importRegex.exec(content)) !== null) {
+        const pkg = match[1] || '';
+        // Normalize scoped packages: @scope/name
+        const normalized = pkg.startsWith('@')
+          ? pkg.split('/').slice(0, 2).join('/')
+          : pkg.split('/')[0] || '';
+        if (normalized && techNames.has(normalized)) {
+          techs.add(normalized);
+        }
+      }
+
+      if (techs.size > 0) {
+        fileTechMap.set(file, [...techs]);
+      }
+    } catch { /* skip unreadable files */ }
+  }
+
+  return fileTechMap;
+}
+
+function extToLanguage(ext: string): string | null {
+  const map: Record<string, string> = {
+    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+    py: 'python', go: 'go', rs: 'rust', java: 'java', rb: 'ruby',
+    php: 'php', cs: 'c#', cpp: 'c++', c: 'c', h: 'c',
+  };
+  return map[ext] || null;
+}
+
+function inferLayerPurpose(featureName: string): string {
+  const purposes: Record<string, string> = {
+    core: 'Core business logic and domain modules',
+    server: 'MCP server, transports, and request handling',
+    storage: 'Database access and persistence layer',
+    indexing: 'Code indexing, parsing, and symbol extraction',
+    api: 'API routes, handlers, and middleware',
+    auth: 'Authentication and authorization',
+    billing: 'Payment processing and subscription management',
+    test: 'Test fixtures, harness, and evaluation scenarios',
+    doc: 'Documentation generation and management',
+    knowledge: 'AI knowledge system and skill management',
+    cli: 'Command-line interface',
+    base: 'Base configuration and shared utilities',
+  };
+  return purposes[featureName] || `${featureName} module`;
+}
+
+function inferDataFlow(features: DetectedFeature[]): string[] {
+  const names = features.map(f => f.name);
+  const flow: string[] = [];
+
+  // Common data flow patterns
+  if (names.includes('server') || names.includes('api')) flow.push('Request');
+  if (names.includes('server')) flow.push('Server');
+  if (names.includes('api')) flow.push('API');
+  if (names.includes('core')) flow.push('Core');
+  if (names.includes('storage')) flow.push('Storage');
+  if (names.includes('indexing')) flow.push('Indexer');
+
+  return flow.length >= 2 ? flow : [];
+}
+
+function detectTestFramework(projectPath: string): string {
+  const pkgPath = join(projectPath, 'package.json');
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+      if (allDeps['vitest']) return 'vitest';
+      if (allDeps['jest']) return 'jest';
+      if (allDeps['mocha']) return 'mocha';
+      if (allDeps['tap']) return 'tap';
+      // Check scripts for node:test
+      if (pkg.scripts?.test?.includes('--test')) return 'node:test';
+    } catch { /* ignore */ }
+  }
+  return 'unknown';
 }

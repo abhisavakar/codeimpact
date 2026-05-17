@@ -4,7 +4,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join, relative } from 'path';
+import { join, relative, dirname } from 'path';
 import type { AgentConfig, AgentIndex, DetectedTechnology, DetectedFeature } from './types.js';
 import { getAgentWorkspacePaths, updateMarkedSection, readAgentConfig } from './workspace.js';
 import { writeMarkedFile as writeMarkedFileImpl, SECTION_PRIORITIES, type MarkedSection, type WriteOptions, type WriteResult } from './marker-writer.js';
@@ -39,7 +39,7 @@ export function generateProjectFiles(input: GeneratorInput): GeneratorResult {
 
   // Generate project/SKILL.md
   const skillPath = join(paths.projectDir, 'SKILL.md');
-  writeMarkedFile(skillPath, renderProjectSkill(intelligence, technologies, config), config, result, 'project_skill');
+  writeMarkedFile(skillPath, renderProjectSkill(intelligence, technologies, config, projectPath), config, result, 'project_skill');
 
   // Generate project/CONVENTIONS.md
   const convPath = join(paths.projectDir, 'CONVENTIONS.md');
@@ -79,6 +79,7 @@ function renderProjectSkill(
   intel: ProjectIntelligence,
   technologies: DetectedTechnology[],
   config: AgentConfig,
+  projectPath?: string,
 ): { frontmatter: string; autoContent: string } {
   const frontmatter = [
     '---',
@@ -96,12 +97,16 @@ function renderProjectSkill(
 
   const lines: string[] = [];
 
-  // Tech Stack
+  // Tech Stack — only direct dependencies (not transitive lockfile noise)
   lines.push('## Tech Stack');
   if (technologies.length > 0) {
-    const topTechs = technologies.slice(0, 15);
-    for (const tech of topTechs) {
-      lines.push(`- ${tech.name} ${tech.version} (from ${tech.source})`);
+    const directDeps = filterDirectDependencies(technologies, projectPath);
+    if (directDeps.length > 0) {
+      for (const tech of directDeps.slice(0, 20)) {
+        lines.push(`- ${tech.name} ${tech.version}`);
+      }
+    } else {
+      lines.push(`- Languages: ${intel.codebase.languages.join(', ')}`);
     }
   } else {
     lines.push(`- Languages: ${intel.codebase.languages.join(', ')}`);
@@ -133,7 +138,9 @@ function renderProjectSkill(
     }
   } else {
     for (const dir of intel.codebase.keyDirectories) {
-      lines.push(`| ${dir}/ | Source code |`);
+      const dirName = dir.split('/').pop() || dir;
+      const purpose = inferDirPurpose(dirName);
+      lines.push(`| ${dir}/ | ${purpose} |`);
     }
   }
   lines.push('');
@@ -330,50 +337,19 @@ function renderFeatureSkill(
     lines.push('');
   }
 
-  // Rules — derived from technology patterns and conventions
+  // Rules — derived from technology patterns and feature characteristics
   lines.push('## Rules');
-  if (technologies.length > 0) {
-    for (const tech of technologies) {
-      if (tech.name === 'express') {
-        lines.push('- Use Router() for modular route definitions');
-        lines.push('- Always register error handler middleware last');
-      } else if (tech.name === 'better-sqlite3') {
-        lines.push('- Use db.prepare().all() for SELECT, db.prepare().run() for INSERT/UPDATE/DELETE');
-        lines.push('- better-sqlite3 is synchronous — do NOT use async/await');
-      } else if (tech.name === 'stripe') {
-        lines.push('- Always verify webhook signatures before processing events');
-        lines.push('- Use idempotency keys for payment creation');
-      } else if (tech.name === 'jsonwebtoken') {
-        lines.push('- Always verify tokens before trusting decoded data');
-        lines.push('- Set explicit expiration times on all tokens');
-      } else {
-        lines.push(`- Follow ${tech.name} v${tech.version} API conventions`);
-      }
-    }
-  } else {
-    lines.push('- Follow project coding conventions for this feature');
+  const rules = deriveRules(feature, technologies);
+  for (const rule of rules) {
+    lines.push(`- ${rule}`);
   }
   lines.push('');
 
   // Pitfalls — from research + known mistakes
   lines.push('## Pitfalls');
-  if (technologies.length > 0) {
-    for (const tech of technologies) {
-      if (tech.name === 'express') {
-        lines.push('- Forgetting to call next() in middleware causes request to hang');
-      } else if (tech.name === 'better-sqlite3') {
-        lines.push('- db.exec() returns nothing — using it for SELECT gives undefined');
-      } else if (tech.name === 'stripe') {
-        lines.push('- Stripe webhook events may arrive out of order — handle idempotently');
-      } else if (tech.name === 'jsonwebtoken') {
-        lines.push('- Using jwt.decode() without verify() is a security vulnerability');
-      }
-    }
-    if (technologies.every(t => !['express', 'better-sqlite3', 'stripe', 'jsonwebtoken'].includes(t.name))) {
-      lines.push('- Check research docs for version-specific breaking changes');
-    }
-  } else {
-    lines.push('- Check for null/undefined before property access on external data');
+  const pitfalls = derivePitfalls(feature, technologies);
+  for (const pitfall of pitfalls) {
+    lines.push(`- ${pitfall}`);
   }
   lines.push('');
 
@@ -458,6 +434,336 @@ function parseAutoContentSections(autoContent: string): MarkedSection[] {
 // Helpers
 // ============================================================================
 
+function inferDirPurpose(dirName: string): string {
+  const purposes: Record<string, string> = {
+    core: 'Core business logic and domain modules',
+    server: 'Server, transports, and request handling',
+    storage: 'Database access and persistence',
+    indexing: 'Code indexing and symbol extraction',
+    api: 'API routes and handlers',
+    auth: 'Authentication and authorization',
+    billing: 'Payment processing',
+    test: 'Tests and evaluation harness',
+    doc: 'Documentation',
+    knowledge: 'AI knowledge system',
+    cli: 'Command-line interface',
+    base: 'Base configuration and fixtures',
+    src: 'Application source code',
+    lib: 'Shared utilities',
+  };
+  return purposes[dirName.toLowerCase()] || `${dirName} module`;
+}
+
+// ============================================================================
+// Technology-Aware Rule & Pitfall Derivation
+// ============================================================================
+
+interface TechKnowledge {
+  rules: string[];
+  pitfalls: string[];
+}
+
+const TECH_KNOWLEDGE: Record<string, TechKnowledge> = {
+  'express': {
+    rules: [
+      'Use Router() for modular route definitions',
+      'Always register error handler middleware last (4 args: err, req, res, next)',
+    ],
+    pitfalls: [
+      'Forgetting to call next() in middleware causes request to hang',
+      'Async errors in handlers need explicit try/catch or express-async-errors',
+    ],
+  },
+  'hono': {
+    rules: [
+      'Use app.route() for modular route grouping',
+      'Return c.json() or c.text() — do not use res.send()',
+    ],
+    pitfalls: [
+      'Hono middleware must call next() or return a Response — skipping both hangs the request',
+    ],
+  },
+  'better-sqlite3': {
+    rules: [
+      'Use db.prepare().all() for SELECT, db.prepare().run() for INSERT/UPDATE/DELETE',
+      'better-sqlite3 is synchronous — do NOT use async/await with db calls',
+      'All database access should go through a single module',
+    ],
+    pitfalls: [
+      'db.exec() returns nothing — using it for SELECT gives undefined',
+      'WAL mode must be set once after opening: db.pragma("journal_mode = WAL")',
+    ],
+  },
+  'stripe': {
+    rules: [
+      'Always verify webhook signatures before processing events',
+      'Use idempotency keys for payment creation to prevent double-charges',
+    ],
+    pitfalls: [
+      'Stripe webhook events may arrive out of order — handle idempotently',
+      'stripe.webhooks.constructEvent() throws on invalid signature — wrap in try/catch',
+    ],
+  },
+  'jsonwebtoken': {
+    rules: [
+      'Always use jwt.verify() — never trust jwt.decode() alone',
+      'Set explicit expiration (expiresIn) on all tokens',
+    ],
+    pitfalls: [
+      'Using jwt.decode() without verify() is a security vulnerability',
+      'The "none" algorithm attack — always specify algorithms: ["HS256"]',
+    ],
+  },
+  '@modelcontextprotocol/sdk': {
+    rules: [
+      'Use server.tool() to register MCP tools with zod schema validation',
+      'All tool handlers must return { content: [...] } response objects',
+    ],
+    pitfalls: [
+      'Tool names must be unique across the server — duplicates silently overwrite',
+      'Forgetting to call server.connect(transport) means no requests are handled',
+    ],
+  },
+  'prisma': {
+    rules: [
+      'Run npx prisma generate after schema changes',
+      'Use transactions for multi-table operations: prisma.$transaction()',
+    ],
+    pitfalls: [
+      'Forgetting prisma generate after schema change causes type mismatches at runtime',
+      'N+1 queries — use include/select to eagerly load relations',
+    ],
+  },
+  'zod': {
+    rules: [
+      'Define schemas once, derive TypeScript types with z.infer<typeof schema>',
+      'Use .safeParse() in handlers for graceful error handling',
+    ],
+    pitfalls: [
+      '.parse() throws on invalid data — use .safeParse() in request handlers',
+    ],
+  },
+  'vitest': {
+    rules: [
+      'Use describe/it/expect patterns for test organization',
+      'Use vi.mock() for module mocking, vi.fn() for function stubs',
+    ],
+    pitfalls: [
+      'vi.mock() is hoisted to top of file — cannot access variables from outer scope',
+    ],
+  },
+  'web-tree-sitter': {
+    rules: [
+      'Initialize Parser with await Parser.init() before use',
+      'Load language WASM files with Parser.Language.load()',
+    ],
+    pitfalls: [
+      'Parser.init() must complete before any parsing — race condition if not awaited',
+      'WASM files must be bundled/copied to dist — not resolved from node_modules at runtime',
+    ],
+  },
+  '@xenova/transformers': {
+    rules: [
+      'Use pipeline() for high-level tasks, AutoModel for custom inference',
+      'Cache downloaded models by setting env.cacheDir',
+    ],
+    pitfalls: [
+      'First model load downloads weights (~100MB+) — cache for subsequent runs',
+      'ONNX runtime may fail on some architectures — test on target platform',
+    ],
+  },
+  'chokidar': {
+    rules: [
+      'Use chokidar.watch() with ignored patterns to skip node_modules',
+      'Handle both "add" and "change" events for file watching',
+    ],
+    pitfalls: [
+      'Not closing watcher on process exit leaks file handles',
+      'Rapid file changes may fire multiple events — debounce handlers',
+    ],
+  },
+};
+
+/** Derive context-aware rules based on feature name and technologies */
+function deriveRules(feature: DetectedFeature, technologies: DetectedTechnology[]): string[] {
+  const rules: string[] = [];
+
+  // Technology-specific rules
+  for (const tech of technologies) {
+    const knowledge = TECH_KNOWLEDGE[tech.name];
+    if (knowledge) {
+      rules.push(...knowledge.rules);
+    }
+  }
+
+  // Feature-name-based rules (when no tech-specific rules available)
+  if (rules.length === 0) {
+    const featureRules = getFeatureNameRules(feature.name);
+    rules.push(...featureRules);
+  }
+
+  // Always add scope awareness
+  if (feature.paths.length > 0) {
+    const scope = feature.paths[0]?.replace('/**', '') || '';
+    rules.push(`Changes here should not import from other feature directories — keep ${scope} self-contained`);
+  }
+
+  return rules;
+}
+
+/** Derive pitfalls based on technologies and feature characteristics */
+function derivePitfalls(feature: DetectedFeature, technologies: DetectedTechnology[]): string[] {
+  const pitfalls: string[] = [];
+
+  for (const tech of technologies) {
+    const knowledge = TECH_KNOWLEDGE[tech.name];
+    if (knowledge) {
+      pitfalls.push(...knowledge.pitfalls);
+    }
+  }
+
+  // Feature-name-based pitfalls when no tech knowledge
+  if (pitfalls.length === 0) {
+    const featurePitfalls = getFeatureNamePitfalls(feature.name);
+    pitfalls.push(...featurePitfalls);
+  }
+
+  return pitfalls;
+}
+
+/** Rules derived from feature name when technologies aren't matched */
+function getFeatureNameRules(name: string): string[] {
+  const rules: Record<string, string[]> = {
+    server: [
+      'All tool/resource handlers must validate inputs before processing',
+      'Return structured error responses — never throw raw errors to clients',
+    ],
+    storage: [
+      'All database access should go through this module — no direct imports elsewhere',
+      'Use transactions for multi-step operations to ensure consistency',
+    ],
+    indexing: [
+      'Index operations should be idempotent — reindexing same file produces same result',
+      'Handle parse errors gracefully — a broken file should not crash the indexer',
+    ],
+    core: [
+      'Core modules should have no side effects on import',
+      'Export types alongside functions for downstream consumers',
+    ],
+    test: [
+      'Tests should be deterministic — no reliance on external services or timing',
+      'Clean up temporary files and directories in afterEach/afterAll hooks',
+    ],
+    knowledge: [
+      'Skill files must follow the agentskills.io SKILL.md format',
+      'Generated content must use marker comments to preserve manual edits',
+    ],
+    doc: [
+      'Generated docs must be kept in sync with source code changes',
+      'Use relative paths for internal links',
+    ],
+    auth: [
+      'Never store plain-text passwords — use bcrypt or argon2',
+      'Validate and sanitize all user inputs before processing',
+    ],
+    api: [
+      'All endpoints must validate request bodies/params before processing',
+      'Return consistent error response shapes across all endpoints',
+    ],
+  };
+  return rules[name] || [
+    'Follow existing patterns in this module for consistency',
+    'Export public API from index.ts — keep internal helpers unexported',
+  ];
+}
+
+/** Pitfalls derived from feature name */
+function getFeatureNamePitfalls(name: string): string[] {
+  const pitfalls: Record<string, string[]> = {
+    server: [
+      'Unhandled promise rejections in handlers crash the process — always catch async errors',
+      'Adding middleware order matters — auth before route handlers',
+    ],
+    storage: [
+      'Forgetting to close database connections leaks file handles',
+      'Concurrent writes without transactions may cause data corruption',
+    ],
+    indexing: [
+      'Large files can cause out-of-memory — set size limits on parsed content',
+      'File paths must be normalized (forward slashes) for cross-platform compatibility',
+    ],
+    core: [
+      'Circular imports between core modules cause runtime errors — check dependency direction',
+      'Changing public API signatures breaks downstream consumers',
+    ],
+    test: [
+      'Tests sharing mutable state between runs cause flaky failures',
+      'Temp directories not cleaned up fill disk over repeated test runs',
+    ],
+  };
+  return pitfalls[name] || [
+    'Check for null/undefined before property access on external data',
+    'Changing exports may break other modules that depend on this feature',
+  ];
+}
+
 function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1).replace(/-/g, ' ');
+}
+
+/**
+ * Filter to only direct (non-transitive) dependencies.
+ * Cross-references with package.json to identify which deps are declared directly.
+ * Lockfile entries for transitive deps are excluded.
+ */
+function filterDirectDependencies(technologies: DetectedTechnology[], projectPath?: string): DetectedTechnology[] {
+  // Build set of direct dep names from package.json / manifest
+  const directNames = new Set<string>();
+
+  // First check if any technologies came from package.json source
+  for (const tech of technologies) {
+    if (tech.source === 'package.json') {
+      directNames.add(tech.name);
+    }
+  }
+
+  // If no package.json entries (lockfile deduped them), read package.json directly
+  if (directNames.size === 0) {
+    const searchPaths = [
+      projectPath ? join(projectPath, 'package.json') : '',
+      join(process.cwd(), 'package.json'),
+    ].filter(Boolean);
+
+    for (const p of searchPaths) {
+      try {
+        if (existsSync(p)) {
+          const pkg = JSON.parse(readFileSync(p, 'utf-8'));
+          for (const d of Object.keys(pkg.dependencies || {})) directNames.add(d);
+          for (const d of Object.keys(pkg.devDependencies || {})) directNames.add(d);
+          break;
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
+  const skipPatterns = [
+    /^@types\//,
+    /^@esbuild\//,
+    /^@rollup\//,
+    /^@swc\//,
+    /^@parcel\//,
+    /^@biomejs\//,
+  ];
+
+  if (directNames.size > 0) {
+    // Return only technologies matching direct deps, filtered for noise
+    return technologies
+      .filter(t => directNames.has(t.name))
+      .filter(t => !skipPatterns.some(p => p.test(t.name)));
+  }
+
+  // Fallback: filter out obvious noise
+  return technologies
+    .filter(t => !skipPatterns.some(p => p.test(t.name)))
+    .slice(0, 20);
 }
