@@ -153,6 +153,7 @@ export class KnowledgeOrchestrator {
     }
 
     // Auto-generate starter skills from real codebase data
+    let autoGeneration: KnowledgeManifest['autoGeneration'];
     if (!dryRun) {
       try {
         const autoResult = this.autoGenerator.generate({
@@ -163,6 +164,8 @@ export class KnowledgeOrchestrator {
         if (autoResult.skillsGenerated > 0) {
           console.error(`[Knowledge] auto-generated ${autoResult.skillsGenerated} skill(s)`);
         }
+        // Re-read manifest to pick up autoGeneration tracking written by the generator
+        autoGeneration = readManifest(this.projectPath).autoGeneration;
       } catch (err) {
         console.error('[Knowledge] auto-skill generation error:', err);
       }
@@ -212,6 +215,7 @@ export class KnowledgeOrchestrator {
       },
       skills: skillEntries,
       docs,
+      autoGeneration,
       providers: providerResults.map((provider) => ({
         provider: provider.provider,
         topic: provider.topic,
