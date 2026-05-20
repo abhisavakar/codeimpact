@@ -34,7 +34,15 @@ export class ChangelogGenerator {
   constructor(projectPath: string, db: Database.Database) {
     this.projectPath = projectPath;
     this.db = db;
-    this.isGitRepo = existsSync(join(projectPath, '.git'));
+    this.isGitRepo = this.detectGitRepo();
+  }
+
+  private detectGitRepo(): boolean {
+    if (existsSync(join(this.projectPath, '.git'))) return true;
+    try {
+      execSync('git rev-parse --is-inside-work-tree', { cwd: this.projectPath, stdio: 'pipe' });
+      return true;
+    } catch { return false; }
   }
 
   async generate(options: ChangelogOptions = {}): Promise<DailyChangelog[]> {
@@ -98,7 +106,10 @@ export class ChangelogGenerator {
 
     try {
       const sinceStr = since.toISOString().split('T')[0];
-      const untilStr = until.toISOString().split('T')[0];
+      // git log --until is exclusive, so add one day to include commits on the until date
+      const untilDate = new Date(until);
+      untilDate.setDate(untilDate.getDate() + 1);
+      const untilStr = untilDate.toISOString().split('T')[0];
 
       // Get commit list with basic info
       const output = execSync(

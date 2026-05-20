@@ -405,12 +405,20 @@ export class ArchitectureGenerator {
     return codeExtensions.some(ext => filename.endsWith(ext));
   }
 
+  private stripCodeExt(filePath: string): string {
+    const base = basename(filePath);
+    const match = base.match(/^(.+)\.(ts|tsx|js|jsx|py|vue|svelte|mjs|cjs|mts|cts|go|rs|java|rb|php)$/);
+    return match ? match[1] : base;
+  }
+
   private extractKeyComponents(layers: ArchitectureLayer[]): ComponentReference[] {
     const components: ComponentReference[] = [];
 
     for (const layer of layers) {
       for (const filePath of layer.files.slice(0, 5)) { // Limit per layer
-        const file = this.tier2.getFile(filePath);
+        // Normalize backslashes to forward slashes for DB lookup (Windows fix)
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        const file = this.tier2.getFile(normalizedPath);
         if (!file) continue;
 
         const symbols = this.tier2.getSymbolsByFile(file.id);
@@ -420,7 +428,7 @@ export class ArchitectureGenerator {
           const mainExport = exports.find(s => s.kind === 'class') || exports[0];
 
           components.push({
-            name: mainExport?.name || basename(filePath, '.ts'),
+            name: mainExport?.name || this.stripCodeExt(filePath),
             file: filePath,
             purpose: this.inferComponentPurpose(filePath, symbols),
             exports: exports.map(s => s.name)
@@ -433,7 +441,7 @@ export class ArchitectureGenerator {
   }
 
   private inferComponentPurpose(filePath: string, symbols: Array<{ name: string; kind: string }>): string {
-    const name = basename(filePath, '.ts').toLowerCase();
+    const name = this.stripCodeExt(filePath).toLowerCase();
     const mainExport = symbols.find(s => s.kind === 'class' || s.kind === 'function');
 
     if (name.includes('engine')) return 'Main orchestration engine';
@@ -454,44 +462,57 @@ export class ArchitectureGenerator {
     const flow: DataFlowStep[] = [];
     const layerNames = layers.map(l => l.name);
 
+    // Fuzzy matching for monorepo layer names like "API Layer (GlassHire-Backend)"
+    const hasLayer = (base: string) => layerNames.some(n => n === base || n.startsWith(base + ' ('));
+    const findLayer = (base: string) => layerNames.find(n => n === base || n.startsWith(base + ' (')) || base;
+
     // Infer common data flows based on detected layers
-    if (layerNames.includes('API Layer') && layerNames.includes('Business Logic')) {
+    if (hasLayer('API Layer') && hasLayer('Business Logic')) {
       flow.push({
-        from: 'API Layer',
-        to: 'Business Logic',
+        from: findLayer('API Layer'),
+        to: findLayer('Business Logic'),
         description: 'Request handling and routing'
       });
     }
 
-    if (layerNames.includes('Business Logic') && layerNames.includes('Data Layer')) {
+    if (hasLayer('Business Logic') && hasLayer('Data Layer')) {
       flow.push({
-        from: 'Business Logic',
-        to: 'Data Layer',
+        from: findLayer('Business Logic'),
+        to: findLayer('Data Layer'),
         description: 'Data persistence and retrieval'
       });
     }
 
-    if (layerNames.includes('Business Logic') && layerNames.includes('Indexing Layer')) {
+    if (hasLayer('Business Logic') && hasLayer('Indexing Layer')) {
       flow.push({
-        from: 'Business Logic',
-        to: 'Indexing Layer',
+        from: findLayer('Business Logic'),
+        to: findLayer('Indexing Layer'),
         description: 'Content indexing and search'
       });
     }
 
-    if (layerNames.includes('CLI Interface') && layerNames.includes('Business Logic')) {
+    if (hasLayer('CLI Interface') && hasLayer('Business Logic')) {
       flow.push({
-        from: 'CLI Interface',
-        to: 'Business Logic',
+        from: findLayer('CLI Interface'),
+        to: findLayer('Business Logic'),
         description: 'Command execution'
       });
     }
 
-    if (layerNames.includes('UI Components') && layerNames.includes('State Management')) {
+    if (hasLayer('UI Components') && hasLayer('State Management')) {
       flow.push({
-        from: 'UI Components',
-        to: 'State Management',
+        from: findLayer('UI Components'),
+        to: findLayer('State Management'),
         description: 'UI state updates'
+      });
+    }
+
+    // Monorepo-specific: Frontend → Backend API flow
+    if (hasLayer('Frontend') && hasLayer('Backend')) {
+      flow.push({
+        from: findLayer('Frontend'),
+        to: findLayer('Backend'),
+        description: 'Frontend-to-backend API communication'
       });
     }
 
@@ -598,26 +619,49 @@ export class ArchitectureGenerator {
     // Check requirements.txt for Python
     const requirementsPath = join(this.projectPath, 'requirements.txt');
     if (existsSync(requirementsPath)) {
-      try {
-        const content = readFileSync(requirementsPath, 'utf-8');
-        const lines = content.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+      this.parseRequirementsTxt(requirementsPath, deps);
+    }
 
-        for (const line of lines.slice(0, 20)) {
-          const match = line.match(/^([a-zA-Z0-9_-]+)(?:[=<>~!]+(.+))?/);
-          if (match) {
-            deps.push({
-              name: match[1]!,
-              version: match[2],
-              type: 'runtime'
-            });
+    // Scan monorepo sub-packages for additional dependencies
+    const monorepoPackages = this.detectMonorepoPackages();
+    const seenDeps = new Set(deps.map(d => d.name));
+    for (const pkg of monorepoPackages) {
+      const subPkg = join(pkg.path, 'package.json');
+      if (existsSync(subPkg)) {
+        try {
+          const sub = JSON.parse(readFileSync(subPkg, 'utf-8'));
+          if (sub.dependencies) {
+            for (const [name, version] of Object.entries(sub.dependencies)) {
+              if (!seenDeps.has(name)) {
+                seenDeps.add(name);
+                deps.push({ name, version: String(version), type: 'runtime' });
+              }
+            }
           }
-        }
-      } catch {
-        // Read error
+        } catch { /* ignore */ }
+      }
+      const subReqs = join(pkg.path, 'requirements.txt');
+      if (existsSync(subReqs)) {
+        this.parseRequirementsTxt(subReqs, deps, seenDeps);
       }
     }
 
     return deps;
+  }
+
+  private parseRequirementsTxt(filePath: string, deps: DependencyInfo[], seen?: Set<string>): void {
+    try {
+      const content = readFileSync(filePath, 'utf-8');
+      const lines = content.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+      for (const line of lines.slice(0, 20)) {
+        const match = line.match(/^([a-zA-Z0-9_-]+)(?:[=<>~!]+(.+))?/);
+        if (match) {
+          if (seen && seen.has(match[1]!)) continue;
+          seen?.add(match[1]!);
+          deps.push({ name: match[1]!, version: match[2], type: 'runtime' });
+        }
+      }
+    } catch { /* ignore */ }
   }
 
   private inferDescription(layers: ArchitectureLayer[], components: ComponentReference[]): string {

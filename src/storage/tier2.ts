@@ -1085,6 +1085,7 @@ export class Tier2Storage {
 
       const dependents = this.getFileDependents(current.path);
       for (const dep of dependents) {
+        if (this.shouldExcludePath(dep.file)) continue;
         const existingDepth = visited.get(dep.file)?.depth ?? Infinity;
         const newDepth = current.depth + 1;
 

@@ -184,6 +184,7 @@ export class KnowledgeOrchestrator {
         console.error('[Knowledge] feature aggregation error:', err);
       }
 
+      updatedManifest.docs = this.deduplicateManifest(updatedManifest.docs);
       writeManifest(this.projectPath, updatedManifest);
 
       try {
@@ -265,6 +266,23 @@ export class KnowledgeOrchestrator {
     }
 
     return Array.from(docMap.values());
+  }
+
+  private deduplicateManifest(docs: KnowledgeManifest['docs']): KnowledgeManifest['docs'] {
+    const docMap = new Map<string, KnowledgeManifest['docs'][0]>();
+    for (const doc of docs) {
+      if (doc.file.includes('knowledge/')) continue; // recursive contamination guard
+      const existing = docMap.get(doc.file);
+      if (!existing || doc.updatedAt > existing.updatedAt) {
+        docMap.set(doc.file, doc);
+      }
+    }
+    // Validate file existence
+    const result: KnowledgeManifest['docs'] = [];
+    for (const doc of docMap.values()) {
+      if (existsSync(join(this.projectPath, doc.file))) result.push(doc);
+    }
+    return result;
   }
 
   private computeContentHash(content: string): string {

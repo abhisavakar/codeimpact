@@ -10,7 +10,6 @@ import type { CodeImpactEngine } from '../../core/engine.js';
 import {
   getAgentWorkspacePaths,
   agentWorkspaceExists,
-  readAgentIndex,
 } from '../../core/agents/workspace.js';
 import { parseAgentMd } from '../../core/agents/agent-generator.js';
 import { getResearchContent } from '../../core/agents/research-engine.js';
@@ -474,8 +473,7 @@ function handleProposeImprovement(projectPath: string, input: MemoryAgentsInput)
     return { success: false, action: 'propose_improvement', message: 'Missing required parameters: target, section, content, evidence' };
   }
 
-  // Store improvement proposal in index.json for next generation cycle
-  const index = readAgentIndex(projectPath);
+  // Store improvement proposal for next generation cycle
   const proposal: ProposedImprovement = {
     id: `imp-${Date.now()}`,
     target: input.target,

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'fs';
-import { dirname, join } from 'path';
+import { basename, dirname, join } from 'path';
 import type { CodeImpactEngine } from '../../core/engine.js';
 import { SkillEvolutionEngine } from '../../core/knowledge/skill-evolution.js';
 import { SkillReader } from '../../core/knowledge/skill-reader.js';
@@ -103,7 +103,7 @@ async function handleCreateSkill(
     description: input.description,
     scope,
     metadata: {
-      project: 'codeimpact',
+      project: basename(engine.getProjectPath()),
       scope,
       created_by: 'ai',
       ...(input.metadata || {}),
@@ -287,16 +287,21 @@ function appendToSkillSection(
 }
 
 function findSkillByName(projectPath: string, skillName: string): string | null {
-  const paths = ensureKnowledgeWorkspace(projectPath);
   const slug = slugify(skillName);
 
+  // Try canonical getSkillPath for each scope first
+  const scopes: Array<'core' | 'technology' | 'feature' | 'risk'> = ['core', 'technology', 'feature', 'risk'];
+  for (const scope of scopes) {
+    const canonical = getSkillPath(projectPath, slug, scope);
+    if (existsSync(canonical)) return canonical;
+  }
+
+  // Fallback: directory scan for name matching
+  const paths = ensureKnowledgeWorkspace(projectPath);
   const categories = ['core', 'technology', 'features', 'risk'];
   for (const cat of categories) {
     const catDir = join(paths.skillsRoot, cat);
     if (!existsSync(catDir)) continue;
-
-    const directPath = join(catDir, slug, 'SKILL.md');
-    if (existsSync(directPath)) return directPath;
 
     try {
       for (const entry of readdirSync(catDir, { withFileTypes: true })) {

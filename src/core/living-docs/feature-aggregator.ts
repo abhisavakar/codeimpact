@@ -90,6 +90,14 @@ ${decisionList}
       for (const [dir, files] of dirGroups.entries()) {
         if (files.length < 2) continue;
 
+        // Skip root-level config-only directories (Bug 13)
+        const dirParts = dir.replace(/\\/g, '/').split('/');
+        if (dirParts.length === 1) {
+          const codeExts = new Set(['.ts','.tsx','.js','.jsx','.py','.vue','.svelte','.go','.rs','.java','.rb','.php']);
+          const codeCount = files.filter(f => codeExts.has(f.substring(f.lastIndexOf('.')))).length;
+          if (codeCount < files.length * 0.5) continue;
+        }
+
         const internalEdges = this.countInternalEdges(files, importGraph);
         if (files.length >= 3 || internalEdges >= 2) {
           const sharedDeps = this.findSharedDependencies(files, importGraph);
@@ -110,7 +118,17 @@ ${decisionList}
       console.error('[FeatureAggregator] cluster detection error:', err);
     }
 
-    return clusters.sort((a, b) => b.files.length - a.files.length).slice(0, 20);
+    return clusters.sort((a, b) => this.getCodeWeight(b.files) - this.getCodeWeight(a.files)).slice(0, 20);
+  }
+
+  private getCodeWeight(files: string[]): number {
+    const codeExts = new Set(['.ts','.tsx','.js','.jsx','.py','.vue','.svelte','.go','.rs','.java','.rb','.php']);
+    let code = 0;
+    for (const f of files) {
+      const ext = f.substring(f.lastIndexOf('.'));
+      if (codeExts.has(ext)) code++;
+    }
+    return code * 2 + (files.length - code) * 0.5;
   }
 
   private groupByDirectory(): Map<string, string[]> {
@@ -167,6 +185,12 @@ ${decisionList}
     return graph;
   }
 
+  private stripCodeExtension(filename: string): string {
+    const base = basename(filename);
+    const match = base.match(/^(.+)\.(ts|tsx|js|jsx|py|vue|svelte|mjs|cjs|mts|cts|go|rs|java|rb|php)$/);
+    return match ? match[1] : base;
+  }
+
   private countInternalEdges(files: string[], graph: Map<string, Set<string>>): number {
     const fileSet = new Set(files.map((f) => f.replace(/\\/g, '/')));
     let count = 0;
@@ -175,7 +199,7 @@ ${decisionList}
       if (!imports) continue;
       for (const imp of imports) {
         const normalized = imp.replace(/\\/g, '/');
-        if (fileSet.has(normalized) || files.some((f) => normalized.includes(basename(f, '.ts')) || normalized.includes(basename(f, '.js')))) {
+        if (fileSet.has(normalized) || files.some((f) => normalized.includes(this.stripCodeExtension(f)))) {
           count++;
         }
       }
@@ -238,13 +262,17 @@ ${decisionList}
     if (decisions.length > 0) {
       return `${this.dirToFeatureName(dir)} — related to: ${decisions[0]}`;
     }
-    const fileNames = files.map((f) => basename(f, '.ts').replace(/-/g, ' ')).join(', ');
+    const fileNames = files.map((f) => this.stripCodeExtension(f).replace(/-/g, ' ')).join(', ');
     return `Module containing: ${fileNames.slice(0, 120)}${fileNames.length > 120 ? '...' : ''}`;
   }
 
   private dirToFeatureName(dir: string): string {
-    const parts = dir.replace(/\\/g, '/').split('/');
-    const last = parts[parts.length - 1] || 'unknown';
-    return last.charAt(0).toUpperCase() + last.slice(1).replace(/[-_]/g, ' ');
+    const parts = dir.replace(/\\/g, '/').split('/').filter(Boolean);
+    const skipPrefixes = new Set(['src', 'lib', 'app', 'packages']);
+    const significant = parts.filter(p => !skipPrefixes.has(p.toLowerCase()));
+    const segments = significant.length >= 2 ? significant.slice(-3) : parts.slice(-2);
+    const name = segments.join(' ');
+    if (!name) return 'Unknown';
+    return name.charAt(0).toUpperCase() + name.slice(1).replace(/[-_]/g, ' ');
   }
 }
