@@ -1,9 +1,10 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
 import type { ProjectIntelligence } from './intelligence-collector.js';
 import type { ProviderResearchEntry } from './provider-research.js';
 import type { FeatureCluster } from '../living-docs/feature-aggregator.js';
 import { writeSkillMd, getSkillPath, type SkillMdInput } from './skill-generator.js';
-import { readManifest, writeManifest } from './workspace.js';
+import { readManifest, writeManifest, getKnowledgePaths } from './workspace.js';
 
 export interface AutoGenerateInput {
   intel: ProjectIntelligence;
@@ -23,6 +24,9 @@ export class SkillAutoGenerator {
   shouldAutoGenerate(): boolean {
     const manifest = readManifest(this.projectPath);
     if (!manifest.autoGeneration) return true;
+
+    // If skills directory is empty/missing, regenerate regardless of file count
+    if (!this.hasExistingSkills()) return true;
 
     const previousCount = manifest.autoGeneration.fileCountAtRun;
     if (previousCount === 0) return true;
@@ -339,6 +343,17 @@ ${changeHotspots}
     }
 
     return pitfalls;
+  }
+
+  private hasExistingSkills(): boolean {
+    try {
+      const paths = getKnowledgePaths(this.projectPath);
+      if (!existsSync(paths.skillsRoot)) return false;
+      const categories = readdirSync(paths.skillsRoot, { withFileTypes: true });
+      return categories.some(c => c.isDirectory() && readdirSync(join(paths.skillsRoot, c.name)).length > 0);
+    } catch {
+      return false;
+    }
   }
 
   private getCurrentFileCount(): number {
