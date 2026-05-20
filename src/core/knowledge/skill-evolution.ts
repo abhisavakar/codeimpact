@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { join } from 'path';
 import type { CodeImpactEngine } from '../engine.js';
 import { SkillReader } from './skill-reader.js';
 import { getKnowledgePaths } from './workspace.js';
@@ -269,9 +270,6 @@ export class SkillEvolutionEngine {
   }
 
   private findSkillFile(dir: string, skillId: string): string | null {
-    const { readdirSync, statSync } = require('fs') as typeof import('fs');
-    const { join } = require('path') as typeof import('path');
-
     if (!existsSync(dir)) return null;
     const entries = readdirSync(dir);
     for (const entry of entries) {

@@ -1,4 +1,4 @@
-import { existsSync } from 'fs';
+import { existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import type { CodeImpactEngine } from '../engine.js';
 import type { ArchitectureDoc, ComponentDoc, DailyChangelog } from '../../types/documentation.js';
@@ -88,6 +88,13 @@ export class KnowledgeOrchestrator {
     const reason = options?.reason || 'manual';
     const dryRun = !!options?.dryRun;
     console.error(`[Knowledge] generate start (reason=${reason}, dryRun=${dryRun})`);
+
+    // Clean up legacy Cloud.md (removed in v0.4.2)
+    const cloudMdPath = join(this.projectPath, 'Cloud.md');
+    if (existsSync(cloudMdPath)) {
+      try { unlinkSync(cloudMdPath); } catch { /* ignore */ }
+    }
+
     const paths = ensureKnowledgeWorkspace(this.projectPath);
     const manifest = readManifest(this.projectPath);
 

@@ -1,6 +1,6 @@
 import { join, basename } from 'path';
 import { existsSync, mkdirSync, readFileSync, statSync, renameSync } from 'fs';
-import { initializeDatabase, closeDatabase } from '../storage/database.js';
+import { initializeDatabase, closeDatabase, checkpointDatabase } from '../storage/database.js';
 import { Tier1Storage } from '../storage/tier1.js';
 import { Tier2Storage } from '../storage/tier2.js';
 import { Tier3Storage } from '../storage/tier3.js';
@@ -268,6 +268,8 @@ export class CodeImpactEngine {
       }
       this.updateProjectSummary();
       this.updateProjectStats();
+      // Checkpoint WAL to prevent unbounded growth after bulk indexing
+      checkpointDatabase(this.db);
       // Extract decisions from git and comments
       this.extractDecisions().catch(err => console.error('Decision extraction error:', err));
 

@@ -1,4 +1,6 @@
 import type Database from 'better-sqlite3';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import type { FileMetadata, Decision, SearchResult, DependencyRelation, CodeSymbol, Import, Export, SymbolKind } from '../types/index.js';
 
 // Patterns to exclude from search results (stale data that shouldn't be indexed)
@@ -119,7 +121,16 @@ export class Tier2Storage {
     // Delete from all related tables using a subquery
     const excludedIds = this.db.prepare(`
       SELECT id FROM files
-      WHERE NOT (${PATH_EXCLUSION_SQL('path')})
+      WHERE path LIKE '%node_modules/%'
+         OR path LIKE '%.git/%'
+         OR path LIKE '%/dist/%'
+         OR path LIKE '%/build/%'
+         OR path LIKE '%/venv/%'
+         OR path LIKE '%/.venv/%'
+         OR path LIKE '%/env/%'
+         OR path LIKE '%__pycache__%'
+         OR path LIKE '%/knowledge/%'
+         OR path LIKE 'knowledge/%'
     `).all() as Array<{ id: number }>;
 
     if (excludedIds.length === 0) return 0;
@@ -1228,8 +1239,6 @@ export class Tier2Storage {
 
     // Try to read tsconfig/jsconfig
     if (projectPath) {
-      const { existsSync, readFileSync } = require('fs');
-      const { join } = require('path');
       for (const configFile of ['tsconfig.json', 'jsconfig.json']) {
         const configPath = join(projectPath, configFile);
         if (existsSync(configPath)) {

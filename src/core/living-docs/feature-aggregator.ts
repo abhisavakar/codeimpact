@@ -117,7 +117,15 @@ ${decisionList}
     const groups = new Map<string, string[]>();
     try {
       const rows = this.db.prepare(
-        `SELECT path FROM files WHERE language IS NOT NULL`,
+        `SELECT path FROM files WHERE language IS NOT NULL
+           AND path NOT LIKE '%node_modules/%'
+           AND path NOT LIKE '%.git/%'
+           AND path NOT LIKE '%/venv/%'
+           AND path NOT LIKE '%/.venv/%'
+           AND path NOT LIKE '%/env/%'
+           AND path NOT LIKE '%__pycache__%'
+           AND path NOT LIKE '%/knowledge/%'
+           AND path NOT LIKE 'knowledge/%'`,
       ).all() as Array<{ path: string }>;
 
       // Exclude generated output dirs to prevent recursive doc nesting

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import type { Decision } from '../types/index.js';
 
@@ -224,7 +224,6 @@ ${decision.files.map(f => `- \`${f}\``).join('\n')}
     if (!existsSync(dir)) return [];
 
     try {
-      const { readdirSync } = require('fs');
       return readdirSync(dir)
         .filter((f: string) => /^\d{4}-.*\.md$/.test(f))
         .sort();

@@ -5,7 +5,8 @@ import { CostTracker, type StatsPeriod } from '../../core/cost-tracker.js';
 import { TestAwareness } from '../../core/test-awareness/index.js';
 import { initializeDatabase } from '../../storage/database.js';
 import { Tier2Storage } from '../../storage/tier2.js';
-import { writeFileSync } from 'fs';
+import { writeFileSync, existsSync, rmSync } from 'fs';
+import { join } from 'path';
 import type { CommandResult } from './types.js';
 import { projectManager, findDatabasePath } from './shared.js';
 
@@ -551,6 +552,17 @@ export function forceReindex(projectPath?: string): CommandResult {
       success: true,
       message: 'No database found - nothing to clear. Run your AI tool to create fresh index.'
     };
+  }
+
+  // Wipe stale generated docs to prevent accumulation from buggy versions
+  const knowledgeDocsDir = join(targetPath, 'knowledge', 'docs');
+  if (existsSync(knowledgeDocsDir)) {
+    try {
+      rmSync(knowledgeDocsDir, { recursive: true, force: true });
+      console.log('Cleared stale knowledge/docs/');
+    } catch {
+      // ignore cleanup errors
+    }
   }
 
   // Open database and clear indexing tables

@@ -13,6 +13,7 @@ export function initializeDatabase(dbPath: string): Database.Database {
 
   // Enable WAL mode for better concurrent access
   db.pragma('journal_mode = WAL');
+  db.pragma('wal_autocheckpoint = 1000');
 
   // Create tables
   db.exec(`
@@ -326,6 +327,14 @@ export function initializeDatabase(dbPath: string): Database.Database {
   }
 
   return db;
+}
+
+export function checkpointDatabase(db: Database.Database): void {
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch {
+    // Ignore checkpoint errors (e.g., if another connection holds the WAL)
+  }
 }
 
 export function closeDatabase(db: Database.Database): void {
