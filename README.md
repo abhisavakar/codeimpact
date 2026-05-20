@@ -27,7 +27,8 @@ CodeImpact is an MCP server that indexes your codebase and gives AI assistants l
 - **Test impact analysis** - Shows which tests to run when you change a file
 - **Blast radius analysis** - Risk scoring and critical path detection for any file change
 - **Knowledge gap detection** - Identifies uncovered technologies and high-risk areas
-- **Self-learning loop** - Records outcomes, diagnoses failures, promotes confirmed patterns to rules
+- **Auto-generated skills** - Generates starter SKILL.md files from real codebase data (technologies, features, conventions) on first index
+- **Self-learning loop** - Records outcomes, diagnoses failures, promotes confirmed patterns to rules; agent failures automatically feed back into skills
 - **Agent lifecycle management** - Proposes merge/split/prune of feature agents based on git history
 - **Research distillation** - Fetches and distills technology documentation with trust scoring
 - **Cost tracking** - Monitors token usage and costs for CodeImpact queries
@@ -77,11 +78,32 @@ CodeImpact includes a production-grade multi-agent system that automatically det
 ```
 Outcome recorded → Diagnose (15-rule decision table)
   → wrong-assumption + fix → Patch SKILL.md immediately
+  → wrong-assumption + fix + no SKILL.md → Patch matching knowledge skill's Watch Out
   → outdated-research → Flag for re-research
   → 2+ similar failures → Write lesson to AGENT.md (quarantine)
   → 3+ confirmations → Promote lesson to SKILL.md Rules
   → 90 days unconfirmed → Decay lesson
 ```
+
+### Auto-Generated Skills (New in 0.5.0)
+
+CodeImpact now auto-generates starter skills from real codebase data during knowledge generation. This closes the intelligence loop — review/verify pipelines have rules to check against from day one, instead of operating in a vacuum.
+
+**Three skill categories are generated:**
+
+| Category | Scope | Cap | Source Data |
+|----------|-------|-----|-------------|
+| Technology patterns | `technology` | 5 | Detected technologies + provider research (pitfalls, best practices, import files) |
+| Feature skills | `feature` | 10 | Feature clusters (3+ files) + risk files + dependency hotspots + decisions |
+| Project conventions | `core` | 1 | Languages, test framework, architecture layers, top patterns, risk/change hotspots |
+
+**Idempotency guarantees:**
+- All auto-generated skills have `auto_generated: true` in frontmatter metadata
+- Re-generation only triggers when the project grows by >20% in file count
+- User-edited skills (where `auto_generated: true` was removed) are never overwritten
+- Auto-generated skills are safely overwritten on regeneration
+
+**Feedback loop:** When an agent records a failure with a fix, the improvement engine patches the matching skill's `## Watch Out` section — so the same mistake is caught by review/verify in future sessions.
 
 ### Agent Workspace Structure
 
@@ -316,13 +338,14 @@ CodeImpact watches your project and maintains:
 1. **Symbol index** - Functions, classes, imports, exports via Tree-sitter AST
 2. **Dependency graph** - File-to-file import relationships (transitive)
 3. **Agent workspace** - Auto-generated SKILL.md, AGENT.md, and research files
-4. **Self-learning loop** - Outcome recording, diagnosis, lesson writing, and promotion
-5. **Research cache** - Distilled technology docs with trust scoring and staleness tracking
-6. **Decision log** - Architectural decisions that persist across sessions
-7. **Embeddings** - Semantic search using MiniLM-L6 locally
-8. **Telemetry** - Generation, learning, and research event tracking (local SQLite)
-9. **Lifecycle proposals** - Merge/split/prune suggestions from git co-change analysis
-10. **Token usage** - Query tracking for cost analysis
+4. **Auto-generated skills** - Starter skills from detected technologies, feature clusters, and project conventions
+5. **Self-learning loop** - Outcome recording, diagnosis, lesson writing, promotion, and skill patching
+6. **Research cache** - Distilled technology docs with trust scoring and staleness tracking
+7. **Decision log** - Architectural decisions that persist across sessions
+8. **Embeddings** - Semantic search using MiniLM-L6 locally
+9. **Telemetry** - Generation, learning, and research event tracking (local SQLite)
+10. **Lifecycle proposals** - Merge/split/prune suggestions from git co-change analysis
+11. **Token usage** - Query tracking for cost analysis
 
 When your AI assistant asks a question, CodeImpact provides the relevant context. When the AI completes work, the self-learning loop captures what happened — successes confirm existing knowledge, failures trigger diagnosis and improvement.
 
@@ -452,10 +475,13 @@ your-project/
 │   ├── project/             # Project-wide SKILL/CONVENTIONS/ARCHITECTURE/AGENT
 │   ├── research/            # Distilled tech docs with trust scores
 │   └── features/            # Per-feature SKILL + AGENT files
-├── knowledge/               # Legacy knowledge workspace
-│   ├── skills/              # AI-created SKILL.md files
+├── knowledge/               # Knowledge workspace
+│   ├── skills/              # SKILL.md files (auto-generated + AI-created)
+│   │   ├── technology/      # Tech pattern skills (auto-generated)
+│   │   ├── features/        # Feature-scoped skills (auto-generated)
+│   │   └── core/            # Project conventions (auto-generated)
 │   ├── docs/                # Generated documentation
-│   └── index.json           # Knowledge manifest
+│   └── index.json           # Knowledge manifest (includes autoGeneration tracking)
 ├── src/
 └── ...
 ```
@@ -486,7 +512,7 @@ git clone https://github.com/abhisavakar/codeimpact.git
 cd codeimpact
 npm install
 npm run build
-npm test              # 120+ tests including 10 eval scenarios
+npm test              # 180+ tests including 10 eval scenarios
 ```
 
 ### Architecture
@@ -499,7 +525,7 @@ src/core/agents/                  # Super Agent System (12 modules)
 ├── research-engine.ts            # Fetch + distill + trust scoring
 ├── generator.ts                  # SKILL.md / CONVENTIONS.md / ARCHITECTURE.md
 ├── agent-generator.ts            # AGENT.md + AGENTS.md shim
-├── improvement-engine.ts         # Self-learning: diagnose → learn → promote → decay
+├── improvement-engine.ts         # Self-learning: diagnose → learn → promote → decay + knowledge skill patching
 ├── diagnosis-table.ts            # 15-rule declarative error classification
 ├── outcome-storage.ts            # SQLite agent_outcomes table
 ├── lifecycle.ts                  # Merge/split/prune proposals
@@ -511,6 +537,18 @@ src/core/agents/                  # Super Agent System (12 modules)
 ├── remote-provider.ts            # GitHub/GitLab/Bitbucket abstraction
 ├── co-change-analyzer.ts         # Git log analysis for feature coupling
 └── workspace.ts                  # Directory management + config
+
+src/core/knowledge/               # Knowledge Layer
+├── orchestrator.ts               # Knowledge generation pipeline (intel → providers → features → auto-skills → evolution)
+├── skill-auto-generator.ts       # Auto-generates starter skills from codebase data (NEW in 0.5.0)
+├── skill-generator.ts            # SKILL.md rendering + writing
+├── skill-reader.ts               # Read/search skills across all scopes
+├── skill-evolution.ts            # Evolve existing skills from usage data
+├── intelligence-collector.ts     # Collect project intelligence (techs, risks, patterns)
+├── provider-research.ts          # Technology documentation research
+├── platform-sync.ts              # Sync rules to IDE platform files
+├── doc-sync.ts                   # Sync architecture/component/changelog docs
+└── workspace.ts                  # Knowledge workspace paths + manifest I/O
 ```
 
 ---

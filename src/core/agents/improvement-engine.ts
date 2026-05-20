@@ -26,6 +26,7 @@ import type {
 import { queryOutcomes, markDiagnosed, recordOutcome } from './outcome-storage.js';
 import { getAgentWorkspacePaths, readAgentConfig, readAgentIndex, writeAgentIndex, updateMarkedSection } from './workspace.js';
 import { diagnoseWithTable, type DiagnosisContext } from './diagnosis-table.js';
+import { SkillReader } from '../knowledge/skill-reader.js';
 
 // ============================================================================
 // Public API — Main Entry Points
@@ -527,15 +528,21 @@ function patchSkillWithFix(
     ? featureSkillPath
     : join(paths.projectDir, 'SKILL.md');
 
-  if (!existsSync(targetPath)) return null;
-
-  const content = readFileSync(targetPath, 'utf-8');
-
   // Build pitfall entry from the diagnosis + fix
   const pitfallEntry = `- ${diagnosis.description.slice(0, 150)} → Fix: ${outcome.fixApplied!.slice(0, 100)}`;
 
+  if (!existsSync(targetPath)) {
+    // Fallback: find matching auto-generated skills in knowledge/skills/
+    return patchKnowledgeSkillFallback(projectPath, outcome, pitfallEntry);
+  }
+
+  const content = readFileSync(targetPath, 'utf-8');
+
   // Find the auto section and add to Pitfalls
-  if (!content.includes(config.markers.start)) return null;
+  if (!content.includes(config.markers.start)) {
+    // No markers — try knowledge skill fallback
+    return patchKnowledgeSkillFallback(projectPath, outcome, pitfallEntry);
+  }
 
   const startIdx = content.indexOf(config.markers.start);
   const endIdx = content.indexOf(config.markers.end);
@@ -560,6 +567,54 @@ function patchSkillWithFix(
 
   writeFileSync(targetPath, updated);
   return targetPath;
+}
+
+/**
+ * Fallback: patch an auto-generated knowledge skill when no .code-impact SKILL.md exists.
+ * Uses SkillReader.findSkillsForFile() to locate matching skills, then appends to ## Watch Out.
+ */
+function patchKnowledgeSkillFallback(
+  projectPath: string,
+  outcome: OutcomeRecord,
+  pitfallEntry: string,
+): string | null {
+  if (!outcome.errorFile) return null;
+
+  try {
+    const reader = new SkillReader(projectPath);
+    const matchingSkills = reader.findSkillsForFile(outcome.errorFile);
+
+    if (matchingSkills.length === 0) return null;
+
+    // Find the actual file path for the first matching skill
+    const level0Skills = reader.readLevel0();
+    const matchedL0 = level0Skills.find(s => s.name === matchingSkills[0]!.id);
+    if (!matchedL0) return null;
+
+    const skillPath = matchedL0.filePath;
+    if (!existsSync(skillPath)) return null;
+
+    const content = readFileSync(skillPath, 'utf-8');
+
+    // Dedup: skip if pitfall already present
+    if (content.includes(pitfallEntry.slice(0, 50))) return null;
+
+    // Append to ## Watch Out section (knowledge skills use simple section-based format)
+    let updated: string;
+    if (content.includes('## Watch Out')) {
+      updated = content.replace(
+        /(## Watch Out\n)/,
+        `$1${pitfallEntry}\n`,
+      );
+    } else {
+      updated = content.trimEnd() + `\n\n## Watch Out\n${pitfallEntry}\n`;
+    }
+
+    writeFileSync(skillPath, updated);
+    return skillPath;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================

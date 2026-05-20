@@ -58,6 +58,11 @@ export interface KnowledgeManifest {
     fetchedAt: string;
     freshnessHours: number;
   }>;
+  autoGeneration?: {
+    lastRunAt: string;
+    fileCountAtRun: number;
+    skillsGenerated: number;
+  };
 }
 
 export interface KnowledgeStatus {

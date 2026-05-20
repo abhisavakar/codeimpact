@@ -10,6 +10,7 @@ import { IntelligenceCollector, type ProjectIntelligence } from './intelligence-
 import { SkillEvolutionEngine } from './skill-evolution.js';
 import { SkillReader } from './skill-reader.js';
 import { FeatureAggregator } from '../living-docs/feature-aggregator.js';
+import { SkillAutoGenerator } from './skill-auto-generator.js';
 
 export interface KnowledgeGenerateOptions {
   reason?: string;
@@ -33,6 +34,7 @@ export class KnowledgeOrchestrator {
   private readonly evolutionEngine: SkillEvolutionEngine;
   private readonly featureAggregator: FeatureAggregator;
   private readonly skillReader: SkillReader;
+  private readonly autoGenerator: SkillAutoGenerator;
   private timer: NodeJS.Timeout | null = null;
   private lastReason = 'unspecified';
   private pendingFiles = new Set<string>();
@@ -50,6 +52,7 @@ export class KnowledgeOrchestrator {
     this.evolutionEngine = new SkillEvolutionEngine(engine);
     this.featureAggregator = new FeatureAggregator(projectPath, engine.getDatabase());
     this.skillReader = new SkillReader(projectPath);
+    this.autoGenerator = new SkillAutoGenerator(projectPath);
   }
 
   schedule(reason: string, changedFiles: string[] = [], delayMs = 1500): void {
@@ -138,6 +141,33 @@ export class KnowledgeOrchestrator {
       });
     }
 
+    // Feature aggregation — moved early so clusters are available for auto-skill generation
+    let featureClusters: import('../living-docs/feature-aggregator.js').FeatureCluster[] = [];
+    if (!dryRun) {
+      try {
+        const featureResult = this.featureAggregator.aggregate();
+        featureClusters = featureResult.clusters;
+      } catch (err) {
+        console.error('[Knowledge] feature aggregation error:', err);
+      }
+    }
+
+    // Auto-generate starter skills from real codebase data
+    if (!dryRun) {
+      try {
+        const autoResult = this.autoGenerator.generate({
+          intel,
+          providers: providerResults,
+          features: featureClusters,
+        });
+        if (autoResult.skillsGenerated > 0) {
+          console.error(`[Knowledge] auto-generated ${autoResult.skillsGenerated} skill(s)`);
+        }
+      } catch (err) {
+        console.error('[Knowledge] auto-skill generation error:', err);
+      }
+    }
+
     let evolutionGuidance: string[] = [];
     this.generateCount++;
     if (!dryRun && this.generateCount % 3 === 0) {
@@ -156,6 +186,7 @@ export class KnowledgeOrchestrator {
       }
     }
 
+    // readLevel0() now picks up auto-generated skills automatically
     const existingSkills = this.skillReader.readLevel0();
     const skillEntries = existingSkills.map((s) => ({
       name: s.name,
@@ -191,18 +222,22 @@ export class KnowledgeOrchestrator {
     };
 
     if (!dryRun) {
-      try {
-        const featureResult = this.featureAggregator.aggregate();
-        for (const fPath of featureResult.files) {
-          const relPath = toProjectRelative(this.projectPath, fPath);
-          updatedManifest.docs.push({
-            type: 'feature',
-            file: relPath,
-            updatedAt: new Date().toISOString(),
-          });
+      // Feature aggregation already ran earlier; add its doc paths to manifest
+      if (featureClusters.length > 0) {
+        const paths = ensureKnowledgeWorkspace(this.projectPath);
+        const aggregatedRoot = join(paths.featureDocsRoot, '_aggregated');
+        for (const cluster of featureClusters) {
+          const slug = cluster.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          const mdPath = join(aggregatedRoot, `${slug}.md`);
+          if (existsSync(mdPath)) {
+            const relPath = toProjectRelative(this.projectPath, mdPath);
+            updatedManifest.docs.push({
+              type: 'feature',
+              file: relPath,
+              updatedAt: new Date().toISOString(),
+            });
+          }
         }
-      } catch (err) {
-        console.error('[Knowledge] feature aggregation error:', err);
       }
 
       updatedManifest.docs = this.deduplicateManifest(updatedManifest.docs);
