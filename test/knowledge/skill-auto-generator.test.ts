@@ -222,6 +222,11 @@ describe('SkillAutoGenerator', () => {
     const first = gen.generate(input);
     assert.ok(first.skillsGenerated > 0, 'First run should generate skills');
 
+    // Simulate orchestrator writing autoGeneration tracking to manifest
+    const manifest = readManifest(TEST_DIR);
+    manifest.autoGeneration = first.autoGeneration!;
+    writeManifest(TEST_DIR, manifest);
+
     // Second run with same file count — should skip due to growth check
     const second = gen.generate(input);
     assert.equal(second.skillsGenerated, 0, 'Second run should generate 0 new skills (idempotent)');
@@ -231,7 +236,7 @@ describe('SkillAutoGenerator', () => {
     const gen = new SkillAutoGenerator(TEST_DIR);
 
     // First: generate to create the skills
-    gen.generate({
+    const first = gen.generate({
       intel: makeIntel(),
       providers: makeProviders(),
       features: makeFeatures(),
@@ -239,45 +244,43 @@ describe('SkillAutoGenerator', () => {
 
     // Simulate user editing a skill: remove auto_generated marker
     const manifest = readManifest(TEST_DIR);
-    // Force re-generation by removing autoGeneration tracking
-    delete manifest.autoGeneration;
+    // Force re-generation by not writing autoGeneration tracking
     writeManifest(TEST_DIR, manifest);
 
     // Find the conventions skill and edit it (remove auto_generated)
-    const skillsDir = join(TEST_DIR, 'knowledge', 'skills', 'core', 'project-conventions', 'SKILL.md');
-    if (existsSync(skillsDir)) {
-      const content = readFileSync(skillsDir, 'utf-8');
+    const skillPath = join(TEST_DIR, 'knowledge', 'skills', 'core', 'project-conventions', 'SKILL.md');
+    if (existsSync(skillPath)) {
+      const content = readFileSync(skillPath, 'utf-8');
       const edited = content.replace('auto_generated: true', 'manually_maintained: true');
-      writeFileSync(skillsDir, edited);
+      writeFileSync(skillPath, edited);
     }
 
     // Re-generate — should not overwrite the user-edited skill
-    const second = gen.generate({
+    gen.generate({
       intel: makeIntel(),
       providers: makeProviders(),
       features: makeFeatures(),
     });
 
-    if (existsSync(skillsDir)) {
-      const finalContent = readFileSync(skillsDir, 'utf-8');
+    if (existsSync(skillPath)) {
+      const finalContent = readFileSync(skillPath, 'utf-8');
       assert.ok(finalContent.includes('manually_maintained: true'), 'Should preserve user edits');
       assert.ok(!finalContent.includes('auto_generated: true'), 'Should NOT overwrite with auto_generated');
     }
   });
 
-  it('should write autoGeneration tracking to manifest', () => {
+  it('should return autoGeneration tracking data in result', () => {
     const gen = new SkillAutoGenerator(TEST_DIR);
-    gen.generate({
+    const result = gen.generate({
       intel: makeIntel(),
       providers: [],
       features: [],
     });
 
-    const manifest = readManifest(TEST_DIR);
-    assert.ok(manifest.autoGeneration, 'Manifest should have autoGeneration field');
-    assert.ok(manifest.autoGeneration.lastRunAt, 'Should have lastRunAt');
-    assert.equal(manifest.autoGeneration.fileCountAtRun, 100, 'Should record file count');
-    assert.ok(manifest.autoGeneration.skillsGenerated >= 1, 'Should record skills generated');
+    assert.ok(result.autoGeneration, 'Result should have autoGeneration');
+    assert.ok(result.autoGeneration!.lastRunAt, 'Should have lastRunAt');
+    assert.equal(result.autoGeneration!.fileCountAtRun, 100, 'Should record file count');
+    assert.ok(result.autoGeneration!.skillsGenerated >= 1, 'Should record skills generated');
   });
 
   it('should cap technology skills at 5', () => {
@@ -304,7 +307,92 @@ describe('SkillAutoGenerator', () => {
     });
 
     const techPaths = result.paths.filter(p => p.includes('technology'));
-    // 5 tech + 1 conventions = up to 6 total, but tech capped at 5
     assert.ok(techPaths.length <= 5, `Tech skills should be capped at 5, got ${techPaths.length}`);
+  });
+
+  it('should cap feature skills at 10', () => {
+    const manyFeatures: FeatureCluster[] = Array.from({ length: 15 }, (_, i) => ({
+      name: `Feature ${i}`,
+      directory: `src/feat${i}`,
+      files: [`src/feat${i}/a.ts`, `src/feat${i}/b.ts`, `src/feat${i}/c.ts`],
+      purpose: `Feature number ${i}`,
+      sharedDependencies: [],
+      decisionTags: [],
+    }));
+
+    const gen = new SkillAutoGenerator(TEST_DIR);
+    const result = gen.generate({
+      intel: makeIntel(),
+      providers: [],
+      features: manyFeatures,
+    });
+
+    const featurePaths = result.paths.filter(p => p.includes('features'));
+    assert.ok(featurePaths.length <= 10, `Feature skills should be capped at 10, got ${featurePaths.length}`);
+  });
+
+  it('should handle null architecture gracefully', () => {
+    const gen = new SkillAutoGenerator(TEST_DIR);
+    const result = gen.generate({
+      intel: makeIntel({ architecture: null as any }),
+      providers: [],
+      features: [],
+    });
+
+    const convPath = result.paths.find(p => p.includes('project-conventions'));
+    assert.ok(convPath, 'Should still generate conventions skill');
+    const content = readFileSync(convPath!, 'utf-8');
+    assert.ok(content.includes('No architectural layers detected'), 'Should handle null architecture');
+  });
+
+  it('should not match short provider keys like "js" against everything (W1)', () => {
+    const gen = new SkillAutoGenerator(TEST_DIR);
+    const result = gen.generate({
+      intel: makeIntel({
+        detectedTechnologies: [
+          { name: 'JS', source: 'js', importPaths: ['src/a.js'] },
+        ],
+      }),
+      providers: [
+        {
+          provider: 'Express.js',
+          topic: 'ex',  // short key that should NOT match "js"
+          fetchedAt: new Date().toISOString(),
+          freshnessHours: 24,
+          sourceUrl: 'https://example.com',
+          summary: 'Express guidance.',
+          retrievalMode: 'static',
+        },
+      ],
+      features: [],
+    });
+
+    // "js" (2 chars) and "ex" (2 chars) should not match each other
+    const techPaths = result.paths.filter(p => p.includes('technology'));
+    assert.equal(techPaths.length, 0, 'Should not match short keys against each other');
+  });
+
+  it('should regenerate when project shrinks significantly (W3)', () => {
+    const gen = new SkillAutoGenerator(TEST_DIR);
+
+    // First run with 100 files
+    const first = gen.generate({
+      intel: makeIntel({ codebase: { ...makeIntel().codebase, fileCount: 100 } }),
+      providers: [],
+      features: [],
+    });
+
+    // Write tracking to manifest
+    const manifest = readManifest(TEST_DIR);
+    manifest.autoGeneration = first.autoGeneration!;
+    writeManifest(TEST_DIR, manifest);
+
+    // Second run with 50 files (50% shrinkage > 20% threshold)
+    const second = gen.generate({
+      intel: makeIntel({ codebase: { ...makeIntel().codebase, fileCount: 50 } }),
+      providers: [],
+      features: [],
+    });
+    assert.ok(second.skillsGenerated > 0, 'Should regenerate on significant shrinkage');
   });
 });

@@ -9,7 +9,7 @@ import { ProviderResearch, type ProviderResearchEntry } from './provider-researc
 import { IntelligenceCollector, type ProjectIntelligence } from './intelligence-collector.js';
 import { SkillEvolutionEngine } from './skill-evolution.js';
 import { SkillReader } from './skill-reader.js';
-import { FeatureAggregator } from '../living-docs/feature-aggregator.js';
+import { FeatureAggregator, type FeatureCluster } from '../living-docs/feature-aggregator.js';
 import { SkillAutoGenerator } from './skill-auto-generator.js';
 
 export interface KnowledgeGenerateOptions {
@@ -142,7 +142,7 @@ export class KnowledgeOrchestrator {
     }
 
     // Feature aggregation — moved early so clusters are available for auto-skill generation
-    let featureClusters: import('../living-docs/feature-aggregator.js').FeatureCluster[] = [];
+    let featureClusters: FeatureCluster[] = [];
     if (!dryRun) {
       try {
         const featureResult = this.featureAggregator.aggregate();
@@ -153,9 +153,11 @@ export class KnowledgeOrchestrator {
     }
 
     // Auto-generate starter skills from real codebase data
-    let autoGeneration: KnowledgeManifest['autoGeneration'];
+    // W6 fix: preserve existing autoGeneration in dryRun mode
+    let autoGeneration: KnowledgeManifest['autoGeneration'] = manifest.autoGeneration;
     if (!dryRun) {
       try {
+        // C2 fix: auto-generator returns tracking data; orchestrator is sole manifest writer
         const autoResult = this.autoGenerator.generate({
           intel,
           providers: providerResults,
@@ -164,8 +166,9 @@ export class KnowledgeOrchestrator {
         if (autoResult.skillsGenerated > 0) {
           console.error(`[Knowledge] auto-generated ${autoResult.skillsGenerated} skill(s)`);
         }
-        // Re-read manifest to pick up autoGeneration tracking written by the generator
-        autoGeneration = readManifest(this.projectPath).autoGeneration;
+        if (autoResult.autoGeneration) {
+          autoGeneration = autoResult.autoGeneration;
+        }
       } catch (err) {
         console.error('[Knowledge] auto-skill generation error:', err);
       }
@@ -228,7 +231,6 @@ export class KnowledgeOrchestrator {
     if (!dryRun) {
       // Feature aggregation already ran earlier; add its doc paths to manifest
       if (featureClusters.length > 0) {
-        const paths = ensureKnowledgeWorkspace(this.projectPath);
         const aggregatedRoot = join(paths.featureDocsRoot, '_aggregated');
         for (const cluster of featureClusters) {
           const slug = cluster.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
