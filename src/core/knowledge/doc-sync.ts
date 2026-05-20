@@ -141,6 +141,15 @@ ${historySection}${contributorsSection}`;
   syncChangelog(days: DailyChangelog[]): { mdPath: string; jsonPath: string } {
     const paths = ensureKnowledgeWorkspace(this.projectPath);
 
+    // Skip writing changelog if no days have actual entries
+    const hasEntries = days.some((day) =>
+      day.features.length > 0 || day.fixes.length > 0 || day.refactors.length > 0,
+    );
+    if (!hasEntries) {
+      const latestPath = join(paths.changelogDocsRoot, 'latest');
+      return { mdPath: `${latestPath}.md`, jsonPath: `${latestPath}.json` };
+    }
+
     for (const day of days) {
       const dateStr = day.date instanceof Date ? day.date.toISOString().split('T')[0] : String(day.date).split('T')[0];
       if (!dateStr) continue;

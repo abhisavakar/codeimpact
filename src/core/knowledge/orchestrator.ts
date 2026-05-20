@@ -1,4 +1,4 @@
-import { existsSync, unlinkSync } from 'fs';
+import { existsSync, readdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import type { CodeImpactEngine } from '../engine.js';
 import type { ArchitectureDoc, ComponentDoc, DailyChangelog } from '../../types/documentation.js';
@@ -104,10 +104,31 @@ export class KnowledgeOrchestrator {
 
     const docs = this.mergeDocsWithExisting(manifest.docs, options, paths);
 
+    const detectedTopics = this.detectProviderTopics(intel);
     const providerResults: ProviderResearchEntry[] = this.providerResearch.refresh({
-      topics: this.detectProviderTopics(intel),
+      topics: detectedTopics,
       dryRun,
     });
+
+    // Clean stale integration docs not in the new provider results
+    if (!dryRun && existsSync(paths.integrationDocsRoot)) {
+      const newSlugs = new Set(providerResults.map((p) => p.topic.toLowerCase().replace(/[^a-z0-9]+/g, '-')));
+      try {
+        for (const file of readdirSync(paths.integrationDocsRoot)) {
+          if (!file.endsWith('.md')) continue;
+          const slug = file.replace(/\.md$/, '');
+          if (!newSlugs.has(slug)) {
+            try { unlinkSync(join(paths.integrationDocsRoot, file)); } catch { /* ignore */ }
+            // Also remove companion .json if present
+            const jsonFile = join(paths.integrationDocsRoot, `${slug}.json`);
+            if (existsSync(jsonFile)) {
+              try { unlinkSync(jsonFile); } catch { /* ignore */ }
+            }
+          }
+        }
+      } catch { /* ignore read errors */ }
+    }
+
     for (const provider of providerResults) {
       const slug = provider.topic.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       docs.push({
@@ -271,7 +292,7 @@ export class KnowledgeOrchestrator {
   private deduplicateManifest(docs: KnowledgeManifest['docs']): KnowledgeManifest['docs'] {
     const docMap = new Map<string, KnowledgeManifest['docs'][0]>();
     for (const doc of docs) {
-      if (doc.file.includes('knowledge/')) continue; // recursive contamination guard
+      if (doc.file === 'knowledge/index.json') continue; // skip self-reference to manifest
       const existing = docMap.get(doc.file);
       if (!existing || doc.updatedAt > existing.updatedAt) {
         docMap.set(doc.file, doc);
@@ -314,7 +335,12 @@ export class KnowledgeOrchestrator {
       if (name.includes('stripe')) topics.push('stripe');
       if (name.includes('graphql')) topics.push('graphql');
       if (name.includes('prisma') || name.includes('typeorm') || name.includes('mongoose')) topics.push('database');
+      if (name.includes('react') || name.includes('next')) topics.push('react');
+      if (name.includes('next') || name.includes('nextjs')) topics.push('nextjs');
+      if (name.includes('typescript')) topics.push('typescript');
+      if (name.includes('express') || name.includes('koa') || name.includes('hono')) topics.push('express');
+      if (name.includes('sqlite') || name.includes('better-sqlite')) topics.push('sqlite');
     }
-    return topics.length > 0 ? [...new Set(topics)] : ['general'];
+    return [...new Set(topics)];
   }
 }

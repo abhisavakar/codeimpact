@@ -27,7 +27,7 @@ describe('PlatformRuleSync', () => {
 
     const results = sync.syncAll(paths, skillIndex);
 
-    assert.ok(results.length === 5, 'Should sync 5 platform files (Cloud.md removed in 0.4.2)');
+    assert.ok(results.length === 6, 'Should sync 6 platform files (5 + .windsurfrules)');
     assert.ok(results.some((r) => r.updated), 'At least one should be updated');
 
     const cursorrules = readFileSync(join(TEST_DIR, '.cursorrules'), 'utf-8');
@@ -115,15 +115,17 @@ describe('PlatformRuleSync', () => {
     assert.ok(content.includes('negative score impact'), 'Should include guidance');
   });
 
-  it('should include quality rules for skill creation', () => {
+  it('should include workflow guidance for tool usage', () => {
     const paths = ensureKnowledgeWorkspace(TEST_DIR);
     const sync = new PlatformRuleSync(TEST_DIR);
     sync.syncAll(paths, []);
 
     const content = readFileSync(join(TEST_DIR, '.cursorrules'), 'utf-8');
-    assert.ok(content.includes('Under 5000 tokens'), 'Should have token limit guideline');
-    assert.ok(content.includes('Be specific'), 'Should have specificity guideline');
-    assert.ok(content.includes('pitfalls with symptoms'), 'Should have pitfall guideline');
+    assert.ok(content.includes('Workflow'), 'Should have workflow section');
+    assert.ok(content.includes('Before Writing Code'), 'Should have pre-write guidance');
+    assert.ok(content.includes('Before Committing'), 'Should have pre-commit guidance');
+    assert.ok(content.includes('memory_ghost'), 'Should reference ghost tool');
+    assert.ok(content.includes('memory_record'), 'Should reference record tool');
   });
 
   it('should not reference scaffolds anywhere', () => {

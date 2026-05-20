@@ -435,6 +435,18 @@ export class CodeImpactEngine {
           AND f.path NOT LIKE '%.code-impact/%'
           AND f.path NOT LIKE '%/venv/%'
           AND f.path NOT LIKE '%/.venv/%'
+          AND f.path NOT LIKE '%.d.ts'
+          AND f.path NOT LIKE '%.d.mts'
+          AND f.path NOT LIKE '%vite.config%'
+          AND f.path NOT LIKE '%next.config%'
+          AND f.path NOT LIKE '%tailwind.config%'
+          AND f.path NOT LIKE '%postcss.config%'
+          AND f.path NOT LIKE '%eslint%'
+          AND f.path NOT LIKE '%prettier%'
+          AND f.path NOT LIKE '%jest.config%'
+          AND f.path NOT LIKE '%tsconfig%'
+          AND f.path NOT LIKE '%dummyData%'
+          AND f.path NOT LIKE '%dummy_data%'
         GROUP BY f.id
         ORDER BY dep_count DESC
         LIMIT 20

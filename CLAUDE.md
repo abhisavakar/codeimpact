@@ -1,47 +1,13 @@
 # Project Instructions
 
-## CodeImpact Integration
-
-CodeImpact provides intelligent code analysis. **Use these tools FIRST** before falling back to built-in tools.
-
-### Tool Preferences (IMPORTANT)
-
-1. **For code searches and questions about the codebase:**
-   - Use `mcp__codeimpact__memory_query` FIRST (759x faster than grep, returns context)
-   - Only fall back to Grep/Glob if CodeImpact returns no results
-
-2. **Before writing or suggesting code changes:**
-   - Run `mcp__codeimpact__memory_review` to check against patterns, past decisions, and potential conflicts
-   - This catches hallucinated imports, duplicate functions, and pattern violations
-
-3. **Before finalizing/committing code:**
-   - Run `mcp__codeimpact__memory_verify` for pre-commit quality checks
-   - Catches security issues, missing dependencies, and import errors
-
-4. **At session start:**
-   - Run `mcp__codeimpact__memory_status` to get project overview and recent changes
-
-5. **For impact analysis:**
-   - Use `mcp__codeimpact__memory_blast_radius` to analyze risk of changing a file
-   - Shows affected files, critical paths, and recommendations
-
-### CLI Commands
+## CLI Commands
 
 ```bash
-# Find unused exports and dead code
-codeimpact deadcode
-
-# Find which tests to run for changed files
-codeimpact test-impact --changed src/file.ts
-
-# Analyze blast radius and risk of changing a file
-codeimpact impact src/core/engine.ts
-
-# View token usage statistics
-codeimpact stats
-
-# Force reindex after git issues (revert, reset, etc.)
-codeimpact reindex
+codeimpact deadcode              # Find unused exports and dead code
+codeimpact test-impact --changed src/file.ts  # Tests to run for changed files
+codeimpact impact src/core/engine.ts          # Blast radius analysis
+codeimpact stats                 # Token usage statistics
+codeimpact reindex               # Force reindex after git issues
 ```
 
 <!-- codeimpact:knowledge:start -->

@@ -118,17 +118,8 @@ export class LivingDocumentationEngine {
 
   private storeDocumentation(filePath: string, docType: string, content: string): void {
     try {
-      // Special handling for architecture docs (no file ID)
+      // Special docs (architecture) are synced to disk via docSync, skip DB storage
       if (filePath === '_architecture') {
-        // Use file_id = 0 for special docs like architecture
-        const stmt = this.db.prepare(`
-          INSERT INTO documentation (file_id, doc_type, content, generated_at)
-          VALUES (0, ?, ?, unixepoch())
-          ON CONFLICT(file_id, doc_type) DO UPDATE SET
-            content = excluded.content,
-            generated_at = unixepoch()
-        `);
-        stmt.run(docType, content);
         return;
       }
 
