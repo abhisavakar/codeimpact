@@ -1279,6 +1279,20 @@ export class Tier2Storage {
     importPath: string,
     projectPath?: string,
   ): { id: number; path: string } | null {
+    // Handle Python relative imports: from .module → ./module, from ..module → ../module
+    if (importPath.startsWith('.') && !importPath.startsWith('./') && !importPath.startsWith('../')) {
+      const dotMatch = importPath.match(/^(\.+)(.*)/);
+      if (dotMatch) {
+        const dots = dotMatch[1];
+        const rest = (dotMatch[2] || '').replace(/\./g, '/');
+        if (dots.length === 1) {
+          importPath = './' + rest;
+        } else {
+          importPath = '../'.repeat(dots.length - 1) + rest;
+        }
+      }
+    }
+
     // Try to resolve path aliases (e.g. @/components/Button → src/components/Button)
     if (!importPath.startsWith('.') && !importPath.startsWith('/')) {
       const aliases = this.getPathAliases(projectPath);
@@ -1310,12 +1324,14 @@ export class Tier2Storage {
     }
 
     // Remove extension if present
-    resolved = resolved.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/, '');
+    resolved = resolved.replace(/\.(ts|tsx|js|jsx|mjs|cjs|py|go)$/, '');
 
     // Try exact matches with common extensions
     const stmt = this.db.prepare(`
       SELECT id, path FROM files
       WHERE path = ? OR path = ? OR path = ? OR path = ?
+         OR path = ? OR path = ?
+         OR path = ? OR path = ?
          OR path = ? OR path = ?
       LIMIT 1
     `);
@@ -1323,7 +1339,9 @@ export class Tier2Storage {
     const result = stmt.get(
       `${resolved}.ts`, `${resolved}.tsx`,
       `${resolved}.js`, `${resolved}.jsx`,
-      `${resolved}/index.ts`, `${resolved}/index.js`
+      `${resolved}/index.ts`, `${resolved}/index.js`,
+      `${resolved}.py`, `${resolved}/__init__.py`,
+      `${resolved}.go`, `${resolved}/main.go`
     ) as { id: number; path: string } | undefined;
 
     return result || null;

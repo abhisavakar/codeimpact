@@ -465,6 +465,27 @@ export class IntelligenceCollector {
         'better-sqlite3': 'SQLite',
         '@xenova/transformers': 'Transformers.js',
         'web-tree-sitter': 'Tree-sitter',
+        // Python
+        sqlalchemy: 'SQLAlchemy',
+        celery: 'Celery',
+        pydantic: 'Pydantic',
+        alembic: 'Alembic',
+        httpx: 'httpx',
+        uvicorn: 'Uvicorn',
+        starlette: 'Starlette',
+        pytest: 'pytest',
+        boto3: 'AWS Boto3',
+        redis: 'Redis',
+        // Go
+        gin: 'Gin',
+        echo: 'Echo',
+        fiber: 'Fiber',
+        gorm: 'GORM',
+        // Rust
+        actix: 'Actix Web',
+        tokio: 'Tokio',
+        serde: 'Serde',
+        diesel: 'Diesel',
       };
 
       for (const dep of deps) {

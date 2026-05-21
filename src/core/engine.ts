@@ -843,6 +843,52 @@ export class CodeImpactEngine {
       }
     }
 
+    // Check pyproject.toml
+    const pyprojectPath = join(this.config.projectPath, 'pyproject.toml');
+    if (existsSync(pyprojectPath)) {
+      try {
+        const content = readFileSync(pyprojectPath, 'utf-8');
+        const depMatch = content.match(/dependencies\s*=\s*\[([\s\S]*?)\]/);
+        if (depMatch) {
+          const pyDeps = depMatch[1].match(/"([^"=<>~!]+)/g)
+            ?.map(d => d.replace(/^"/, '').trim())
+            .filter(Boolean) || [];
+          deps.push(...pyDeps.slice(0, 20));
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Check go.mod
+    const goModPath = join(this.config.projectPath, 'go.mod');
+    if (existsSync(goModPath)) {
+      try {
+        const content = readFileSync(goModPath, 'utf-8');
+        const reqMatch = content.match(/require\s*\(([\s\S]*?)\)/);
+        if (reqMatch) {
+          const goDeps = reqMatch[1].split('\n')
+            .map(l => l.trim().split(/\s/)[0])
+            .filter(l => l && !l.startsWith('//'))
+            .map(l => l.split('/').pop() || l);
+          deps.push(...goDeps.slice(0, 20));
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Check Cargo.toml
+    const cargoPath = join(this.config.projectPath, 'Cargo.toml');
+    if (existsSync(cargoPath)) {
+      try {
+        const content = readFileSync(cargoPath, 'utf-8');
+        const inDeps = content.match(/\[dependencies\]([\s\S]*?)(\[|$)/);
+        if (inDeps) {
+          const rustDeps = inDeps[1].split('\n')
+            .map(l => l.trim().split(/\s*=/)[0])
+            .filter(l => l && !l.startsWith('#'));
+          deps.push(...rustDeps.slice(0, 20));
+        }
+      } catch { /* ignore */ }
+    }
+
     return deps;
   }
 

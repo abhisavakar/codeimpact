@@ -55,7 +55,19 @@ export class ArchitectureGenerator {
     'spec': 'Testing',
     'infrastructure': 'Infrastructure',
     'docker': 'Infrastructure',
-    'terraform': 'Infrastructure'
+    'terraform': 'Infrastructure',
+    'middleware': 'Middleware',
+    'tasks': 'Background Tasks',
+    'celery': 'Background Tasks',
+    'workers': 'Background Tasks',
+    'crud': 'Data Layer',
+    'deps': 'Dependencies/DI',
+    'dependencies': 'Dependencies/DI',
+    'endpoints': 'API Layer',
+    'handlers': 'API Layer',
+    'pkg': 'Packages',
+    'internal': 'Internal Packages',
+    'cmd': 'CLI Interface',
   };
 
   // Monorepo package patterns - directories that contain their own src/app structure

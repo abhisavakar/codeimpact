@@ -381,6 +381,14 @@ export class KnowledgeOrchestrator {
       if (name.includes('typescript')) topics.push('typescript');
       if (name.includes('express') || name.includes('koa') || name.includes('hono')) topics.push('express');
       if (name.includes('sqlite') || name.includes('better-sqlite')) topics.push('sqlite');
+      if (name.includes('sqlalchemy') || name.includes('alembic')) topics.push('sqlalchemy');
+      if (name.includes('celery')) topics.push('celery');
+      if (name.includes('pydantic')) topics.push('pydantic');
+      if (name.includes('django')) topics.push('django');
+      if (name.includes('flask')) topics.push('flask');
+      if (name.includes('gin') || name.includes('echo') || name.includes('fiber')) topics.push('gin');
+      if (name.includes('pytest')) topics.push('pytest_provider');
+      if (name.includes('redis')) topics.push('redis');
     }
     return [...new Set(topics)];
   }

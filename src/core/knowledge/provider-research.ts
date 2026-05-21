@@ -111,6 +111,54 @@ const PROVIDER_REGISTRY: Record<string, ProviderInfo> = {
     summary: 'Follow 12-factor principles. Externalize config, handle errors gracefully, log structured data, and test critical paths.',
     pitfalls: ['Hardcoded configuration', 'Swallowing errors silently', 'Missing input validation'],
   },
+  sqlalchemy: {
+    provider: 'SQLAlchemy',
+    url: 'https://docs.sqlalchemy.org/',
+    summary: 'Use the ORM session properly, prefer select() over legacy Query API, and handle connection pooling.',
+    pitfalls: ['Detached instance errors', 'N+1 lazy loading', 'Not closing sessions'],
+  },
+  celery: {
+    provider: 'Celery',
+    url: 'https://docs.celeryq.dev/',
+    summary: 'Use task retries with exponential backoff, set hard time limits, and prefer JSON serializer.',
+    pitfalls: ['Missing task time limits', 'Using pickle serializer', 'Not handling task failures'],
+  },
+  pydantic: {
+    provider: 'Pydantic',
+    url: 'https://docs.pydantic.dev/',
+    summary: 'Use model_validator for cross-field validation, Field() for constraints, and model_config for settings.',
+    pitfalls: ['Mutable default values', 'Not using Field aliases for API contracts', 'Ignoring validation errors'],
+  },
+  django: {
+    provider: 'Django',
+    url: 'https://docs.djangoproject.com/',
+    summary: 'Follow MTV pattern, use ORM querysets efficiently, and leverage middleware and signals carefully.',
+    pitfalls: ['N+1 queries without select_related', 'Unvalidated user input in templates', 'Missing CSRF protection'],
+  },
+  flask: {
+    provider: 'Flask',
+    url: 'https://flask.palletsprojects.com/',
+    summary: 'Use blueprints for modularity, application factory pattern, and proper error handlers.',
+    pitfalls: ['Running in debug mode in production', 'Using global state unsafely', 'Missing CSRF protection on forms'],
+  },
+  gin: {
+    provider: 'Gin (Go)',
+    url: 'https://gin-gonic.com/docs/',
+    summary: 'Use middleware chains, structured logging, and proper error handling with c.AbortWithStatusJSON.',
+    pitfalls: ['Not using recovery middleware', 'Blocking in handlers without goroutines', 'Missing input validation'],
+  },
+  pytest_provider: {
+    provider: 'pytest',
+    url: 'https://docs.pytest.org/',
+    summary: 'Use fixtures for setup/teardown, parametrize for data-driven tests, and conftest.py for shared fixtures.',
+    pitfalls: ['Fixtures with too-wide scope', 'Not using tmp_path for file tests', 'Forgetting to mark async tests'],
+  },
+  redis: {
+    provider: 'Redis',
+    url: 'https://redis.io/docs/',
+    summary: 'Use connection pooling, set TTLs on all keys, and prefer pipelines for batch operations.',
+    pitfalls: ['Missing key expiration', 'Not using connection pools', 'Storing large values without compression'],
+  },
 };
 
 export class ProviderResearch {

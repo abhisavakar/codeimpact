@@ -573,8 +573,8 @@ export class ASTParser {
     const patterns = {
       function: /^(?:async\s+)?def\s+(\w+)\s*\(/,
       class: /^class\s+(\w+)/,
-      import: /^import\s+(\w+(?:\.\w+)*)/,
-      fromImport: /^from\s+(\w+(?:\.\w+)*)\s+import\s+(.+)/,
+      import: /^import\s+(\w+(?:\.\w+)*)(?:\s+as\s+\w+)?/,
+      fromImport: /^from\s+(\.{0,3}\w*(?:\.\w+)*)\s+import\s+(.+)/,
     };
 
     for (let i = 0; i < lines.length; i++) {
